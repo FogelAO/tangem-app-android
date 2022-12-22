@@ -11,15 +11,15 @@ import com.tangem.blockchain.common.TransactionError
 import com.tangem.blockchain.common.TransactionSender
 import com.tangem.blockchain.common.WalletManager
 import com.tangem.blockchain.extensions.SimpleResult
-import com.tangem.common.card.Card
 import com.tangem.common.core.TangemSdkError
 import com.tangem.common.services.Result
+import com.tangem.domain.common.CardDTO
 import com.tangem.domain.common.TapWorkarounds.isStart2Coin
 import com.tangem.domain.common.extensions.withMainContext
 import com.tangem.tap.DELAY_SDK_DIALOG_CLOSE
-import com.tangem.tap.common.analytics.AnalyticsAnOld
-import com.tangem.tap.common.analytics.AnalyticsEventAnOld
-import com.tangem.tap.common.analytics.AnalyticsParamAnOld
+import com.tangem.tap.common.analytics.Analytics
+import com.tangem.tap.common.analytics.events.AnalyticsParam
+import com.tangem.tap.common.analytics.events.Token
 import com.tangem.tap.common.extensions.dispatchDialogShow
 import com.tangem.tap.common.extensions.dispatchErrorNotification
 import com.tangem.tap.common.extensions.dispatchOnMain
@@ -52,11 +52,12 @@ import com.tangem.tap.features.wallet.redux.WalletAction
 import com.tangem.tap.scope
 import com.tangem.tap.store
 import com.tangem.tap.tangemSdk
+import com.tangem.tap.userWalletsListManager
+import com.tangem.tap.walletCurrenciesManager
 import com.tangem.wallet.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.rekotlin.Action
 import org.rekotlin.Middleware
 import java.util.*
@@ -150,7 +151,7 @@ private fun sendTransaction(
     feeAmount: Amount,
     destinationAddress: String,
     transactionExtras: TransactionExtrasState,
-    card: Card,
+    card: CardDTO,
     externalTransactionData: ExternalTransactionData?,
     dispatch: (Action) -> Unit,
 ) {
@@ -181,7 +182,7 @@ private fun sendTransaction(
             return@launch
         }
 
-        val isLinkedTerminal = tangemSdk.config.linkedTerminal
+        val linkedTerminalState = tangemSdk.config.linkedTerminal
         if (card.isStart2Coin) {
             tangemSdk.config.linkedTerminal = false
         }
@@ -209,6 +210,7 @@ private fun sendTransaction(
             FirebaseCrashlytics.getInstance().recordException(ex)
             delay(DELAY_SDK_DIALOG_CLOSE)
             withMainContext {
+                tangemSdk.config.linkedTerminal = linkedTerminalState
                 dispatch(SendAction.ChangeSendButtonState(ButtonState.ENABLED))
                 store.dispatchErrorNotification(TapError.CustomError(ex.localizedMessage ?: "Unknown error"))
             }
@@ -217,15 +219,12 @@ private fun sendTransaction(
 
         withMainContext {
             dispatch(SendAction.ChangeSendButtonState(ButtonState.ENABLED))
-            tangemSdk.config.linkedTerminal = isLinkedTerminal
+            tangemSdk.config.linkedTerminal = linkedTerminalState
 
+            val currencyType = AnalyticsParam.CurrencyType.Amount(amountToSend)
             when (sendResult) {
                 is SimpleResult.Success -> {
-                    store.state.globalState.analyticsHandler?.handleAnalyticsEvent(
-                        event = AnalyticsEventAnOld.TRANSACTION_IS_SENT,
-                        card = card,
-                        blockchain = walletManager.wallet.blockchain.currency,
-                    )
+                    Analytics.send(Token.Send.TransactionSent(currencyType))
                     dispatch(SendAction.SendSuccess)
 
                     if (externalTransactionData != null) {
@@ -234,13 +233,9 @@ private fun sendTransaction(
                         dispatch(NavigationAction.PopBackTo())
                     }
                     scope.launch(Dispatchers.IO) {
-                        withContext(Dispatchers.Main) {
-                            dispatch(WalletAction.LoadWallet(BlockchainNetwork.fromWalletManager(walletManager)))
-                        }
+                        updateWallet(walletManager)
                         delay(11000) // more than 10000 to avoid throttling
-                        withContext(Dispatchers.Main) {
-                            dispatch(WalletAction.LoadWallet(BlockchainNetwork.fromWalletManager(walletManager)))
-                        }
+                        updateWallet(walletManager)
                     }
                 }
                 is SimpleResult.Failure -> {
@@ -250,14 +245,9 @@ private fun sendTransaction(
                         feeAmount = feeAmount,
                         destinationAddress = destinationAddress,
                     )
-                    store.state.globalState.analyticsHandler?.handleBlockchainSdkErrorEvent(
-                        error = sendResult.error,
-                        action = AnalyticsAnOld.ActionToLog.SendTransaction,
-                        params = mapOf(AnalyticsParamAnOld.BLOCKCHAIN to walletManager.wallet.blockchain.currency),
-                        card = card,
-                    )
-
                     val error = (sendResult.error as? BlockchainSdkError) ?: return@withMainContext
+
+                    Analytics.send(Token.Send.TransactionSent(currencyType, error))
 
                     when (error) {
                         is BlockchainSdkError.WrappedTangemError -> {
@@ -335,4 +325,17 @@ private fun updateWarnings(dispatch: (Action) -> Unit) {
 
     val warnings = warningsManager.getWarnings(WarningMessage.Location.SendScreen, listOf(blockchain))
     dispatch(SendAction.Warnings.Set(warnings))
+}
+
+private suspend fun updateWallet(walletManager: WalletManager) {
+    val blockchainNetwork = BlockchainNetwork.fromWalletManager(walletManager)
+    val selectedUserWallet = userWalletsListManager.selectedUserWalletSync
+    if (selectedUserWallet != null) {
+        walletCurrenciesManager.update(
+            userWallet = selectedUserWallet,
+            blockchainNetwork = blockchainNetwork,
+        )
+    } else {
+        store.dispatchOnMain(WalletAction.LoadWallet(BlockchainNetwork.fromWalletManager(walletManager)))
+    }
 }

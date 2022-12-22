@@ -24,6 +24,7 @@ import com.tangem.tap.features.wallet.redux.reducers.findProgressState
 import com.tangem.tap.features.wallet.ui.BalanceStatus
 import com.tangem.tap.features.wallet.ui.BalanceWidgetData
 import com.tangem.tap.store
+import com.tangem.tap.userWalletsListManager
 import org.rekotlin.StateType
 import java.math.BigDecimal
 import kotlin.properties.ReadOnlyProperty
@@ -46,6 +47,7 @@ data class WalletState(
     val showBackupWarning: Boolean = false,
     val missingDerivations: List<BlockchainNetwork> = emptyList(),
     val loadingUserTokens: Boolean = false,
+    val walletCardsCount: Int? = null,
 ) : StateType {
 
     // if you do not delegate - the application crashes on startup,
@@ -79,6 +81,9 @@ data class WalletState(
     val shouldShowDetails: Boolean =
         primaryWallet?.currencyData?.status != BalanceStatus.EmptyCard &&
             primaryWallet?.currencyData?.status != BalanceStatus.UnknownBlockchain
+
+    val hasSavedWallets: Boolean
+        get() = userWalletsListManager.hasSavedUserWallets
 
     fun getWalletManager(currency: Currency?): WalletManager? {
         if (currency?.blockchain == null) return null
@@ -242,11 +247,11 @@ data class WalletState(
                 totalBalance = TotalBalance(
                     state = walletsData.findProgressState(),
                     fiatAmount = walletsData.calculateTotalFiatAmount(),
-                    fiatCurrency = store.state.globalState.appCurrency
-                )
+                    fiatCurrency = store.state.globalState.appCurrency,
+                ),
             )
         } else this.copy(
-            totalBalance = null
+            totalBalance = null,
         )
     }
 
@@ -350,7 +355,7 @@ data class WalletData(
 
     private fun assembleNonTypedWarnings(walletWarnings: MutableList<WalletWarning>) {
         if (currencyData.status == BalanceStatus.SameCurrencyTransactionInProgress) {
-            walletWarnings.add(WalletWarning.TransactionInProgress)
+            walletWarnings.add(WalletWarning.TransactionInProgress(currency.currencyName))
         }
     }
 

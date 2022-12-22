@@ -3,7 +3,6 @@ package com.tangem.tap.features.wallet.ui.wallet
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.tangem.domain.common.TwinCardNumber
 import com.tangem.tap.common.extensions.beginDelayedTransition
 import com.tangem.tap.common.extensions.fitChipsByGroupWidth
 import com.tangem.tap.common.extensions.getQuantityString
@@ -34,13 +33,18 @@ class SingleWalletView : WalletView() {
     }
 
     private fun showSingleWalletView(binding: FragmentWalletBinding) = with(binding) {
+        tvTwinCardNumber.hide()
         rvMultiwallet.hide()
         btnAddToken.hide()
         rvPendingTransaction.hide()
         pbLoadingUserTokens.hide()
+        lCardTotalBalance.root.hide()
+        lSingleWalletBalance.root.hide()
+        lWalletRescanWarning.root.hide()
+        lWalletBackupWarning.root.hide()
         lCardBalance.root.show()
         lAddress.root.show()
-        lSingleWalletBalance.root.hide()
+        rowButtons.show()
     }
 
     override fun onViewCreated() {
