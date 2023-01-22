@@ -1,12 +1,14 @@
 package com.tangem.feature.swap.domain
 
-import com.tangem.feature.swap.domain.models.AggregatedSwapDataModel
-import com.tangem.feature.swap.domain.models.data.ApproveModel
-import com.tangem.feature.swap.domain.models.data.Currency
-import com.tangem.feature.swap.domain.models.data.SwapDataModel
-import com.tangem.feature.swap.domain.models.data.SwapState
+import com.tangem.feature.swap.domain.models.domain.ApproveModel
+import com.tangem.feature.swap.domain.models.domain.Currency
+import com.tangem.feature.swap.domain.models.domain.QuoteModel
+import com.tangem.feature.swap.domain.models.domain.SwapDataModel
+import com.tangem.feature.swap.domain.models.data.AggregatedSwapDataModel
 
 interface SwapRepository {
+
+    suspend fun getRates(currencyId: String, tokenIds: List<String>): Map<String, Double>
 
     suspend fun getExchangeableTokens(networkId: String): List<Currency>
 
@@ -15,7 +17,7 @@ interface SwapRepository {
         fromTokenAddress: String,
         toTokenAddress: String,
         amount: String,
-    ): AggregatedSwapDataModel<SwapState.QuoteModel>
+    ): AggregatedSwapDataModel<QuoteModel>
 
     /**
      * Returns address of 1inch router that must be trusted
@@ -50,6 +52,7 @@ interface SwapRepository {
         walletAddress: String,
     ): AggregatedSwapDataModel<String>
 
+    @Suppress("LongParameterList")
     suspend fun prepareSwapTransaction(
         networkId: String,
         fromTokenAddress: String,

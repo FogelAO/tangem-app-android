@@ -1,18 +1,17 @@
 package com.tangem.datasource.di
 
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import com.tangem.datasource.api.AuthHeaderInterceptor
-import com.tangem.datasource.api.common.BigDecimalAdapter
-import com.tangem.datasource.api.referral.ReferralApi
+import com.tangem.datasource.api.paymentology.PaymentologyApi
 import com.tangem.datasource.api.tangemTech.TangemTechApi
+import com.tangem.datasource.utils.RequestHeader.*
+import com.tangem.datasource.utils.addHeaders
+import com.tangem.datasource.utils.allowLogging
 import com.tangem.lib.auth.AuthProvider
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import javax.inject.Singleton
@@ -23,55 +22,42 @@ class NetworkModule {
 
     @Provides
     @Singleton
-    fun provideTangemTechApi(
-        okHttpClient: OkHttpClient,
-        moshi: Moshi,
-    ): TangemTechApi {
+    fun provideTangemTechApi(authProvider: AuthProvider, @NetworkMoshi moshi: Moshi): TangemTechApi {
         return Retrofit.Builder()
-            .addConverterFactory(
-                MoshiConverterFactory.create(moshi),
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .baseUrl(PROD_TANGEM_TECH_BASE_URL)
+            .client(
+                OkHttpClient.Builder()
+                    .addHeaders(
+                        CacheControlHeader,
+                        AuthenticationHeader(authProvider),
+                    )
+                    .allowLogging()
+                    .build(),
             )
-            .baseUrl(DEV_TANGEM_TECH_BASE_URL)
-            .client(okHttpClient)
             .build()
             .create(TangemTechApi::class.java)
     }
 
     @Provides
     @Singleton
-    fun provideReferralApi(okHttpClient: OkHttpClient, moshi: Moshi): ReferralApi {
+    fun providePaymentologyApi(@NetworkMoshi moshi: Moshi): PaymentologyApi {
         return Retrofit.Builder()
-            .addConverterFactory(
-                MoshiConverterFactory.create(moshi),
-            )
-            .baseUrl(DEV_TANGEM_TECH_BASE_URL)
-            .client(okHttpClient)
-            .build()
-            .create(ReferralApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    fun provideOkHttpClient(authProvider: AuthProvider): OkHttpClient {
-        return OkHttpClient.Builder()
-            .addInterceptor(AuthHeaderInterceptor(authProvider))
-            .addInterceptor(
-                HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BODY),
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .baseUrl(PAYMENTOLOGY_BASE_URL)
+            .client(
+                OkHttpClient.Builder()
+                    .allowLogging()
+                    .build(),
             )
             .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideMoshi(): Moshi {
-        return Moshi.Builder()
-            .add(KotlinJsonAdapterFactory())
-            .add(BigDecimalAdapter())
-            .build()
+            .create(PaymentologyApi::class.java)
     }
 
     private companion object {
         const val PROD_TANGEM_TECH_BASE_URL = "https://api.tangem-tech.com/v1/"
         const val DEV_TANGEM_TECH_BASE_URL = "https://devapi.tangem-tech.com/v1/"
+
+        private const val PAYMENTOLOGY_BASE_URL: String = "https://paymentologygate.oa.r.appspot.com/"
     }
 }

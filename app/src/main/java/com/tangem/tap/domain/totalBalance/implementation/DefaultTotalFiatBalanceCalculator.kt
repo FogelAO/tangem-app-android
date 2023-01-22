@@ -10,18 +10,11 @@ import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 
 internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
-    override suspend fun calculate(
-        prevAmount: BigDecimal?,
-        walletStores: List<WalletStoreModel>,
-        initial: TotalFiatBalance,
-    ): TotalFiatBalance {
-        return calculateOrNull(prevAmount, walletStores) ?: initial
+    override suspend fun calculate(walletStores: List<WalletStoreModel>, initial: TotalFiatBalance): TotalFiatBalance {
+        return calculateOrNull(walletStores) ?: initial
     }
 
-    override suspend fun calculateOrNull(
-        prevAmount: BigDecimal?,
-        walletStores: List<WalletStoreModel>,
-    ): TotalFiatBalance? {
+    override suspend fun calculateOrNull(walletStores: List<WalletStoreModel>): TotalFiatBalance? {
         return if (walletStores.isEmpty()) {
             null
         } else {
@@ -33,9 +26,6 @@ internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
 
                 when (walletsData.findStatus()) {
                     TotalFiatBalanceStatus.Loading -> TotalFiatBalance.Loading
-                    TotalFiatBalanceStatus.Refreshing -> TotalFiatBalance.Refreshing(
-                        amount = prevAmount ?: BigDecimal.ZERO,
-                    )
                     TotalFiatBalanceStatus.Error -> TotalFiatBalance.Error(calculateAmount())
                     TotalFiatBalanceStatus.Loaded -> TotalFiatBalance.Loaded(calculateAmount())
                 }
@@ -54,7 +44,6 @@ internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
     private fun Sequence<WalletDataModel>.mapToStatus(): Sequence<TotalFiatBalanceStatus> {
         return this.map { walletData ->
             when (walletData.status) {
-                is WalletDataModel.Refreshing -> TotalFiatBalanceStatus.Refreshing
                 is WalletDataModel.VerifiedOnline,
                 is WalletDataModel.SameCurrencyTransactionInProgress,
                 is WalletDataModel.TransactionInProgress,
@@ -84,18 +73,10 @@ internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
     ): TotalFiatBalanceStatus {
         return when (prevStatus) {
             TotalFiatBalanceStatus.Loading -> prevStatus
-            TotalFiatBalanceStatus.Refreshing -> when (newStatus) {
-                TotalFiatBalanceStatus.Loading -> prevStatus
-                TotalFiatBalanceStatus.Refreshing,
-                TotalFiatBalanceStatus.Error,
-                TotalFiatBalanceStatus.Loaded,
-                -> newStatus
-            }
             TotalFiatBalanceStatus.Loaded,
             TotalFiatBalanceStatus.Error,
             -> when (newStatus) {
                 TotalFiatBalanceStatus.Loading,
-                TotalFiatBalanceStatus.Refreshing,
                 TotalFiatBalanceStatus.Error,
                 -> newStatus
                 TotalFiatBalanceStatus.Loaded -> prevStatus
@@ -105,7 +86,6 @@ internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
 
     private enum class TotalFiatBalanceStatus {
         Loading,
-        Refreshing,
         Error,
         Loaded,
     }

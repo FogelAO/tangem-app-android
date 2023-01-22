@@ -100,7 +100,7 @@
     <string name="wallet_connect_title">WalletConnect</string>
     <string name="wallet_connect_subtitle">Connect to Dapps</string>
     <string name="reset_card_without_backup_to_factory_message">Factory Reset will completely delete the wallet from the selected card and remove it from the app. You will not be able to restore the current wallet.</string>
-    <string name="reset_card_with_backup_to_factory_message">Factory Reset will completely delete the wallet from the selected card and remove it from the app. You will not be able to restore the current wallet or use the card to recover the access code.</string>
+    <string name="reset_card_with_backup_to_factory_message">Factory Reset will completely delete the wallet from the selected card. You will not be able to restore the current wallet or use the card to recover the access code.</string>
     <string name="reset_card_to_factory_warning_message">I understand that after performing this action, I will no longer have access to the current wallet</string>
     <string name="reset_card_to_factory_button_title">Reset the Card</string>
     <string name="card_settings_reset_card_to_factory">Reset to Factory Settings</string>
@@ -191,17 +191,29 @@
     <string name="common_share">Share</string>
     <string name="common_copy">Copy</string>
     <string name="common_success">Avec succès</string>
+    <string name="common_close">Close</string>
+    <string name="exchange_send_view_header">You Send</string>
+    <string name="exchange_receive_view_header">You Receive</string>
+    <string name="swapping_generic_error">There was an error. Please try again.</string>
     <string name="swapping_permission_header">Give Permission</string>
     <string name="swapping_permission_subheader">To continue you need to allow 1inch smart contracts to use your %s</string>
     <string name="swapping_permission_rows_amount">Amount %s</string>
     <string name="swapping_permission_rows_your_wallet">Your Wallet</string>
     <string name="swapping_permission_rows_spender">Spender</string>
     <string name="swapping_permission_buttons_approve">Approve</string>
-    <string name="swapping_swap_of_to">Swap of %s to</string>
+    <string name="swapping_swap_of_to">Swap of %s to %s</string>
     <string name="swapping_swap">Swap</string>
     <string name="swapping_insufficient_funds">Insufficient funds</string>
     <string name="swapping_give_permission">Give Permission</string>
     <string name="swapping_permit_and_swap">Permit and Swap</string>
+    <string name="swapping_token_list_your_title">Choose token</string>
+    <string name="swapping_token_list_your_tokens">Your tokens</string>
+    <string name="swapping_token_list_other_tokens">Other tokens</string>
+    <string name="swapping_pending_transaction_title">Waiting</string>
+    <string name="swapping_pending_transaction_subtitle">Transaction in progress…</string>
+    <string name="swapping_success_view_title">In progress</string>
+    <string name="swapping_success_view_explorer_button_title">View in Explorer</string>
+    <string name="swapping_token_not_available">not available</string>
     <string name="referral_error_failed_to_load_info">Failed to load the information about the referral program. Please try again later.</string>
     <string name="referral_error_failed_to_load_info_with_reason">Failed to load the information about the referral program. Reason: %s. Please try again later.</string>
     <string name="referral_error_failed_to_participate">Your participation request could not be processed. Reason: %s. Please try again later. If the problem persists — feel free to contact our support.</string>
@@ -350,8 +362,7 @@
     <string name="onboarding_done_header">Success!</string>
     <string name="onboarding_done_body">Your card is activated and ready to be used</string>
     <string name="onboarding_balance_title">Balance</string>
-    <string name="address_qr_code_message_format">Send only %s (%s) to this address. Using other tokens and networks may result in loss of funds.</string>
-    <string name="address_qr_code_message_token_format">Send only %s (%s) from %s network to this address. Using other tokens and networks may result in loss of funds.</string>
+    <string name="address_qr_code_message_format">Send only %s (%s) from %s network to this address. Using other tokens and networks may result in loss of funds.</string>
     <string name="onboarding_twins_interrupt_warning">If the process of creating the wallet gets interrupted in any way, you\'ll have to start over.</string>
     <string name="onboarding_twin_exit_warning">The twinning process is partly complete. You can\'t exit it now.</string>
     <string name="warning_button_ok">Ok, je l\'ai!</string>
@@ -450,6 +461,7 @@
     <string name="app_settings_enable_biometrics_title">Enable biometric authentication</string>
     <string name="app_settings_enable_biometrics_description">Go to settings to enable biometric authentication in the Tangem App</string>
     <string name="wallet_balance_missing_derivation">Scan the card</string>
+    <string name="disclaimer_error_loading">Check your internet connection or switch to a different network</string>
 
     <!-- Special string -->
     <string name="common_custom_string">%s</string>

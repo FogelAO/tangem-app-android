@@ -1,6 +1,5 @@
 package com.tangem.tap.features.details.redux
 
-import android.net.Uri
 import com.tangem.blockchain.common.Wallet
 import com.tangem.domain.common.CardDTO
 import com.tangem.domain.common.ScanResponse
@@ -16,7 +15,6 @@ data class DetailsState(
     val scanResponse: ScanResponse? = null,
     val wallets: List<Wallet> = emptyList(),
     val cardSettingsState: CardSettingsState? = null,
-    val cardTermsOfUseUrl: Uri? = null,
     val privacyPolicyUrl: String? = null,
     val createBackupAllowed: Boolean = false,
     val appCurrency: FiatCurrency = FiatCurrency.Default,
@@ -31,15 +29,14 @@ data class DetailsState(
     val twinCardsState: TwinCardsState by ReadOnlyProperty<Any, TwinCardsState> { _, _ ->
         store.state.twinCardsState
     }
-
-    val isTangemTwins: Boolean
-        get() = store.state.globalState.scanResponse?.isTangemTwins() == true
 }
 
 data class CardInfo(
     val cardId: String,
     val issuer: String,
     val signedHashes: Int,
+    val isTwin: Boolean,
+    val hasBackup: Boolean,
 )
 
 data class CardSettingsState(

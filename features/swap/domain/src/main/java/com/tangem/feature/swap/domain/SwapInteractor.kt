@@ -1,21 +1,37 @@
 package com.tangem.feature.swap.domain
 
-import com.tangem.feature.swap.domain.models.data.Currency
-import com.tangem.feature.swap.domain.models.data.SwapState
+import com.tangem.feature.swap.domain.models.SwapAmount
+import com.tangem.feature.swap.domain.models.cache.ExchangeCurrencies
+import com.tangem.feature.swap.domain.models.domain.Currency
+import com.tangem.feature.swap.domain.models.ui.FoundTokensState
+import com.tangem.feature.swap.domain.models.ui.SwapState
+import com.tangem.feature.swap.domain.models.ui.TokensDataState
 
 interface SwapInteractor {
 
-    suspend fun getTokensToSwap(networkId: String): List<Currency>
+    suspend fun initTokensToSwap(initialCurrency: Currency): TokensDataState
 
-    suspend fun getTokenBalance(tokenId: String): String
+    suspend fun onSearchToken(searchQuery: String): FoundTokensState
 
-    suspend fun givePermissionToSwap(tokenAddress: String)
+    fun getExchangeCurrencies(): ExchangeCurrencies?
 
+    fun findTokenById(id: String): Currency?
+
+    /**
+     * Give permission to swap
+     */
+    @Throws(IllegalStateException::class)
+    suspend fun givePermissionToSwap()
+
+    @Throws(IllegalStateException::class)
     suspend fun findBestQuote(
-        fromTokenAddress: String,
-        toTokenAddress: String,
-        amount: String,
+        fromToken: Currency,
+        toToken: Currency,
+        amount: SwapAmount,
     ): SwapState
 
+    @Throws(IllegalStateException::class)
     suspend fun onSwap(): SwapState
+
+    fun getTokenDecimals(token: Currency): Int
 }

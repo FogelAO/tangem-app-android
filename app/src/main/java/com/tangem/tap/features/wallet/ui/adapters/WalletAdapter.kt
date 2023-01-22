@@ -6,8 +6,8 @@ import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.tangem.core.analytics.Analytics
 import com.tangem.domain.common.TapWorkarounds.derivationStyle
-import com.tangem.tap.common.analytics.Analytics
 import com.tangem.tap.common.analytics.events.Portfolio
 import com.tangem.tap.common.extensions.getString
 import com.tangem.tap.common.extensions.hide
@@ -28,7 +28,9 @@ class WalletAdapter : ListAdapter<WalletData, WalletAdapter.WalletsViewHolder>(D
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): WalletsViewHolder {
         val layout = ItemCurrencyWalletBinding.inflate(
-            LayoutInflater.from(parent.context), parent, false,
+            LayoutInflater.from(parent.context),
+            parent,
+            false,
         )
         return WalletsViewHolder(layout)
     }
@@ -39,11 +41,13 @@ class WalletAdapter : ListAdapter<WalletData, WalletAdapter.WalletsViewHolder>(D
 
     object DiffUtilCallback : DiffUtil.ItemCallback<WalletData>() {
         override fun areContentsTheSame(
-            oldItem: WalletData, newItem: WalletData,
+            oldItem: WalletData,
+            newItem: WalletData,
         ) = oldItem == newItem
 
         override fun areItemsTheSame(
-            oldItem: WalletData, newItem: WalletData,
+            oldItem: WalletData,
+            newItem: WalletData,
         ) = oldItem == newItem
     }
 
@@ -61,6 +65,9 @@ class WalletAdapter : ListAdapter<WalletData, WalletAdapter.WalletsViewHolder>(D
                 }
                 BalanceStatus.Unreachable -> {
                     root.getString(R.string.wallet_balance_blockchain_unreachable)
+                }
+                BalanceStatus.MissedDerivation -> {
+                    root.getString(R.string.wallet_balance_missing_derivation)
                 }
                 else -> null
             }
@@ -95,7 +102,7 @@ class WalletAdapter : ListAdapter<WalletData, WalletAdapter.WalletsViewHolder>(D
             if (wallet.walletAddresses != null) {
                 cardWallet.setOnClickListener {
                     Analytics.send(Portfolio.TokenTapped())
-                    store.dispatch(WalletAction.MultiWallet.SelectWallet(wallet))
+                    store.dispatch(WalletAction.MultiWallet.SelectWallet(wallet.currency))
                 }
             } else {
                 cardWallet.setOnClickListener(null)

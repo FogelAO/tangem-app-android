@@ -2,6 +2,7 @@ plugins {
     id("com.android.library")
     kotlin("android")
     kotlin("kapt")
+    kotlin("plugin.serialization")
     id("com.google.dagger.hilt.android")
 }
 
@@ -55,11 +56,13 @@ dependencies {
     implementation(AndroidX.appCompat)
     implementation(AndroidX.fragmentKtx)
     implementation(AndroidX.lifecycleViewModelKtx)
+    implementation(AndroidX.browser)
 
     /** Compose */
     implementation(Compose.foundation)
     implementation(Compose.material)
     implementation(Compose.uiTooling)
+    implementation(Compose.coil)
 
     /** Domain */
     implementation(project(":features:swap:domain"))
@@ -67,6 +70,7 @@ dependencies {
 
     /** Other libraries */
     implementation(Library.composeShimmer)
+    implementation(Library.kotlinSerialization)
 
     /** DI */
     implementation(Library.hilt)

@@ -10,15 +10,13 @@ import com.tangem.LogFormat
 import com.tangem.blockchain.common.BlockchainSdkConfig
 import com.tangem.blockchain.common.WalletManagerFactory
 import com.tangem.blockchain.network.BlockchainSdkRetrofitBuilder
-import com.tangem.common.json.MoshiJsonConverter
-import com.tangem.datasource.api.common.BigDecimalAdapter
+import com.tangem.core.analytics.Analytics
 import com.tangem.datasource.api.common.MoshiConverter
 import com.tangem.domain.DomainLayer
 import com.tangem.domain.common.LogConfig
 import com.tangem.tap.common.AndroidAssetReader
 import com.tangem.tap.common.AssetReader
 import com.tangem.tap.common.IntentHandler
-import com.tangem.tap.common.analytics.Analytics
 import com.tangem.tap.common.analytics.AnalyticsFactory
 import com.tangem.tap.common.analytics.api.AnalyticsHandlerBuilder
 import com.tangem.tap.common.analytics.filters.BasicSignInFilter
@@ -52,7 +50,6 @@ import com.tangem.tap.domain.walletStores.repository.WalletStoresRepository
 import com.tangem.tap.domain.walletStores.repository.di.provideDefaultImplementation
 import com.tangem.tap.domain.walletconnect.WalletConnectRepository
 import com.tangem.tap.network.NetworkConnectivity
-import com.tangem.tap.persistence.CardBalanceStateAdapter
 import com.tangem.tap.persistence.PreferencesStorage
 import com.tangem.tap.proxy.AppStateHolder
 import com.tangem.wallet.BuildConfig
@@ -128,7 +125,6 @@ class TapApplication : Application(), ImageLoaderFactory {
             middleware = AppState.getMiddleware(),
             state = AppState(),
         )
-        appStateHolder.mainStore = store
 
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
@@ -138,14 +134,13 @@ class TapApplication : Application(), ImageLoaderFactory {
         activityResultCaller = foregroundActivityObserver
         registerActivityLifecycleCallbacks(foregroundActivityObserver.callbacks)
 
-        initMoshiConverter()
         DomainLayer.init()
         NetworkConnectivity.createInstance(store, this)
         preferencesStorage = PreferencesStorage(this)
         walletConnectRepository = WalletConnectRepository(this)
 
         assetReader = AndroidAssetReader(this)
-        val configLoader = FeaturesLocalLoader(assetReader, MoshiConverter.INSTANCE.moshi)
+        val configLoader = FeaturesLocalLoader(assetReader, MoshiConverter.sdkMoshi)
         initConfigManager(configLoader, ::initWithConfigDependency)
         initWarningMessagesManager()
 
@@ -155,19 +150,9 @@ class TapApplication : Application(), ImageLoaderFactory {
             context = this,
             tangemTechService = store.state.domainNetworks.tangemTechService,
         )
+        appStateHolder.mainStore = store
         appStateHolder.userTokensRepository = userTokensRepository
-    }
-
-    //todo refactor: move to datasource and provide via DI
-    private fun initMoshiConverter() {
-        fun appAdapters(): List<Any> = listOf(
-            BigDecimalAdapter(),
-            CardBalanceStateAdapter(),
-        )
-        MoshiConverter.reInitInstance(
-            adapters = appAdapters() + MoshiJsonConverter.getTangemSdkAdapters(),
-            typedAdapters = MoshiJsonConverter.getTangemSdkTypedAdapters(),
-        )
+        appStateHolder.walletStoresManager = walletStoresManager
     }
 
     override fun newImageLoader(): ImageLoader {
@@ -188,7 +173,7 @@ class TapApplication : Application(), ImageLoaderFactory {
     private fun initWithConfigDependency(config: Config) {
         shopService = TangemShopService(this, config.shopify!!)
         initAnalytics(this, config)
-        initFeedbackManager(this, preferencesStorage, config)
+        initFeedbackManager(this, preferencesStorage)
     }
 
     private fun initAnalytics(application: Application, config: Config) {
@@ -206,12 +191,12 @@ class TapApplication : Application(), ImageLoaderFactory {
             config = config,
             isDebug = BuildConfig.DEBUG,
             logConfig = LogConfig.analyticsHandlers,
-            jsonConverter = MoshiConverter.INSTANCE,
+            jsonConverter = MoshiConverter.sdkMoshiConverter,
         )
         factory.build(Analytics, buildData)
     }
 
-    private fun initFeedbackManager(context: Context, preferencesStorage: PreferencesStorage, config: Config) {
+    private fun initFeedbackManager(context: Context, preferencesStorage: PreferencesStorage) {
         fun initAdditionalFeedbackInfo(context: Context): AdditionalFeedbackInfo = AdditionalFeedbackInfo().apply {
             appVersion = try {
                 val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)

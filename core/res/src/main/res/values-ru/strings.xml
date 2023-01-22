@@ -56,7 +56,7 @@
     <string name="custom_token_token_symbol_input_placeholder">Например, USDC</string>
     <string name="custom_token_token_symbol_input_title">Символ токена</string>
     <string name="custom_token_derivation_path_input_title">Деривация по BIP44</string>
-    <string name="custom_token_derivation_path_default">По-умолчанию</string>
+    <string name="custom_token_derivation_path_default">По умолчанию</string>
     <string name="common_server_unavailable">Сервер недоступен, повторите попытку позднее</string>
     <string name="main_page_balance">Баланс</string>
     <string name="main_processing_full_amount">В сумме учтены не все монеты</string>
@@ -99,8 +99,8 @@
     <string name="app_settings_off_saved_access_code_alert_message">Все сохраненные коды доступа будут удалены. Вам потребуется вводить код доступа при работе с кошельком.</string>
     <string name="wallet_connect_title">WalletConnect</string>
     <string name="wallet_connect_subtitle">Подключение к Dapps</string>
-    <string name="reset_card_without_backup_to_factory_message">Сброс к заводским настройкам приведет к полному удалению кошелька на этой карте, а также отвязыванию карты из приложения. Кошелек невозможно будет восстановить.</string>
-    <string name="reset_card_with_backup_to_factory_message">Сброс к заводским настройкам приведет к полному удалению кошелька на этой карте, а также отвязыванию карты из приложения. Кошелек невозможно будет восстановить или использовать данную карту для восстановления кода доступа.</string>
+    <string name="reset_card_without_backup_to_factory_message">Сброс к заводским настройкам приведет к полному удалению кошелька с выбранной карты. Вы не сможете восстановить текущий кошелек.</string>
+    <string name="reset_card_with_backup_to_factory_message">Сброс к заводским настройкам приведет к полному удалению кошелька с выбранной карты. Вы не сможете восстановить текущий кошелек или использовать данную карту для восстановления кода доступа.</string>
     <string name="reset_card_to_factory_warning_message">Я понимаю, что после выполнения этого действия у меня больше не будет доступа к текущему кошельку</string>
     <string name="reset_card_to_factory_button_title">Сбросить карту</string>
     <string name="card_settings_reset_card_to_factory">Сброс к заводским настройкам</string>
@@ -191,20 +191,32 @@
     <string name="common_share">Поделиться</string>
     <string name="common_copy">Копировать</string>
     <string name="common_success">Успешно</string>
+    <string name="common_close">Закрыть</string>
+    <string name="exchange_send_view_header">Вы отправляете</string>
+    <string name="exchange_receive_view_header">Вы получаете</string>
+    <string name="swapping_generic_error">Произошла ошибка. Пожалуйста, попробуйте еще раз.</string>
     <string name="swapping_permission_header">Дать разрешение</string>
     <string name="swapping_permission_subheader">Чтобы продолжить, вам нужно разрешить смарт-контракту 1inch использовать ваш %s</string>
     <string name="swapping_permission_rows_amount">Количество %s</string>
     <string name="swapping_permission_rows_your_wallet">Ваш кошелек</string>
     <string name="swapping_permission_rows_spender">Отправитель</string>
     <string name="swapping_permission_buttons_approve">Подтвердить</string>
-    <string name="swapping_swap_of_to">Обмен %s на</string>
+    <string name="swapping_swap_of_to">Обмен %s на %s</string>
     <string name="swapping_swap">Обмен</string>
     <string name="swapping_insufficient_funds">Недостаточно средств</string>
     <string name="swapping_give_permission">Дать разрешение</string>
     <string name="swapping_permit_and_swap">Разрешить и обменять</string>
+    <string name="swapping_token_list_your_title">Выберите токен</string>
+    <string name="swapping_token_list_your_tokens">Ваши токены</string>
+    <string name="swapping_token_list_other_tokens">Другие токены</string>
+    <string name="swapping_pending_transaction_title">Подождите</string>
+    <string name="swapping_pending_transaction_subtitle">Транзакция в процессе…</string>
+    <string name="swapping_success_view_title">В процессе</string>
+    <string name="swapping_success_view_explorer_button_title">Открыть в обозревателе</string>
+    <string name="swapping_token_not_available">не доступен</string>
     <string name="referral_error_failed_to_load_info">Не удалось загрузить информацию по реферальной программе. Пожалуйста, попробуйте позже.</string>
-    <string name="referral_error_failed_to_load_info_with_reason">Не удалось загрузить информацию по реферальной программе. Причина: %s. Пожалуйста, попробуйте позже.</string>
-    <string name="referral_error_failed_to_participate">Не удалось обработать вашу заявку на участие. Причина: %s. Пожалуйста, попробуйте позже. Если проблема сохранится, вы можете обратиться в техподдержку.</string>
+    <string name="referral_error_failed_to_load_info_with_reason">Не удалось загрузить информацию по реферальной программе. Код ошибки: %s. Пожалуйста, попробуйте позже.</string>
+    <string name="referral_error_failed_to_participate">Не удалось обработать вашу заявку на участие. Код ошибки: %s. Пожалуйста, попробуйте позже. Если проблема сохранится, вы можете обратиться в техподдержку.</string>
     <string name="referral_promo_code_copied">Персональный код скопирован!</string>
     <string name="referral_share_link">Купи Tangem Wallet со скидкой!\n%s</string>
     <string name="warning_existential_deposit_message">Сеть %s использует концепцию экзистенциального депозита. Если баланс вашего счета опустится ниже %s, он будет деактивирован, а все оставшиеся средства будут уничтожены.</string>
@@ -350,8 +362,7 @@
     <string name="onboarding_done_header">Успешно!</string>
     <string name="onboarding_done_body">Ваша карта активирована и готова к использованию</string>
     <string name="onboarding_balance_title">Баланс</string>
-    <string name="address_qr_code_message_format">Отправляйте только %s (%s) на этот адрес. Иначе это может привести к утрате средств.</string>
-    <string name="address_qr_code_message_token_format">Отправляйте только %s (%s) из сети %s на этот адрес. Иначе это может привести к утрате средств.</string>
+    <string name="address_qr_code_message_format">Отправляйте только %s (%s) в сети %s на этот адрес. Использование другой сети может привести к утрате средств.</string>
     <string name="onboarding_twins_interrupt_warning">Если процесc создания кошелька каким-либо образом прервется, вам придется начинать сначала.</string>
     <string name="onboarding_twin_exit_warning">Процесс связывания карт частично завершен. Вы не можете выйти из него сейчас.</string>
     <string name="warning_button_ok">Понятно!</string>
@@ -450,6 +461,7 @@
     <string name="app_settings_enable_biometrics_title">Включите биометрическую аутентификацию</string>
     <string name="app_settings_enable_biometrics_description">Перейдите в настройки, чтобы включить биометрическую аутентификацию в приложении Tangem App</string>
     <string name="wallet_balance_missing_derivation">Отсканируйте карту</string>
+    <string name="disclaimer_error_loading">Проверьте подключение с интернетом или переключитесь на другую сеть</string>
 
     <!-- Special string -->
     <string name="common_custom_string">%s</string>

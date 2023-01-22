@@ -8,7 +8,7 @@ import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.view.isVisible
 import androidx.transition.TransitionManager
 import coil.load
-import com.tangem.tap.common.analytics.Analytics
+import com.tangem.core.analytics.Analytics
 import com.tangem.tap.common.analytics.events.Onboarding
 import com.tangem.tap.common.extensions.getDrawableCompat
 import com.tangem.tap.common.redux.navigation.ShareElement
@@ -65,6 +65,7 @@ class OnboardingOtherCardsFragment : BaseOnboardingFragment<OnboardingOtherCards
         when (state.currentStep) {
             OnboardingOtherCardsStep.CreateWallet -> setupCreateWalletState()
             OnboardingOtherCardsStep.Done -> setupDoneState()
+            else -> {}
         }
         showConfetti(state.showConfetti)
     }
@@ -87,7 +88,6 @@ class OnboardingOtherCardsFragment : BaseOnboardingFragment<OnboardingOtherCards
             requireContext().getDrawableCompat(R.drawable.shape_circle),
         )
         updateConstraints(R.layout.lp_onboarding_create_wallet)
-
     }
 
     private fun setupDoneState() = with(mainBinding.onboardingActionContainer) {

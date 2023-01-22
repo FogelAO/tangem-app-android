@@ -1,5 +1,6 @@
 package com.tangem.tap.features.wallet.ui
 
+import android.content.Context
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuInflater
@@ -9,15 +10,18 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.transition.TransitionInflater
 import by.kirich1409.viewbindingdelegate.viewBinding
 import coil.load
 import coil.size.Scale
+import com.tangem.core.analytics.Analytics
+import com.tangem.core.ui.fragments.setStatusBarColor
+import com.tangem.core.ui.utils.OneTouchClickListener
 import com.tangem.domain.common.TapWorkarounds.isSaltPay
 import com.tangem.tap.MainActivity
-import com.tangem.tap.common.analytics.Analytics
 import com.tangem.tap.common.analytics.converters.BasicSignInEventConverter
 import com.tangem.tap.common.analytics.converters.BasicTopUpEventConverter
 import com.tangem.tap.common.analytics.events.MainScreen
@@ -30,7 +34,6 @@ import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.domain.configurable.warningMessage.WarningMessage
 import com.tangem.tap.domain.statePrinter.printScanResponseState
 import com.tangem.tap.domain.statePrinter.printWalletState
-import com.tangem.tap.domain.termsOfUse.CardTou
 import com.tangem.tap.features.details.redux.DetailsAction
 import com.tangem.tap.features.wallet.redux.ErrorType
 import com.tangem.tap.features.wallet.redux.ProgressState
@@ -58,6 +61,13 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
 
     private val viewModel by viewModels<WalletViewModel>()
 
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+        activity?.lifecycleScope?.launchWhenCreated {
+            viewModel.launch()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setHasOptionsMenu(true)
@@ -84,11 +94,13 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
 
     override fun onStart() {
         super.onStart()
+
+        setStatusBarColor(R.color.background_secondary)
+
         store.subscribe(this) { state ->
             state.select { it.walletState }
         }
         walletView.setFragment(this, binding)
-        viewModel.launch()
     }
 
     override fun onStop() {
@@ -97,13 +109,18 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
         walletView.removeFragment()
     }
 
+    override fun onDestroy() {
+        walletView.onDestroyFragment()
+        super.onDestroy()
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         (activity as? AppCompatActivity)?.setSupportActionBar(binding.toolbar)
 
-        binding.toolbar.setNavigationOnClickListener {
-            store.dispatch(WalletAction.ChangeWallet)
-        }
+        binding.toolbar.setNavigationOnClickListener(
+            OneTouchClickListener { store.dispatch(WalletAction.ChangeWallet) },
+        )
         setupWarningsRecyclerView()
         walletView.changeWalletView(this, binding)
         addCustomActionOnCard()
@@ -118,6 +135,7 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
         }
     }
 
+    @Suppress("MagicNumber")
     private fun setupWarningsRecyclerView() {
         warningsAdapter = WarningMessagesAdapter()
         val layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
@@ -128,6 +146,7 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
         }
     }
 
+    @Suppress("ComplexMethod")
     override fun newState(state: WalletState) {
         if (activity == null || view == null) return
 
@@ -135,7 +154,7 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
         val isSaltPay = store.state.globalState.scanResponse?.card?.isSaltPay == true
 
         when {
-            isSaltPay && (walletView !is SaltPaySingleWalletView) -> {
+            isSaltPay && walletView !is SaltPaySingleWalletView -> {
                 walletView = SaltPaySingleWalletView()
                 walletView.changeWalletView(this, binding)
             }
@@ -166,7 +185,7 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
 
         binding.srlWallet.isRefreshing = state.state == ProgressState.Refreshing
         binding.srlWallet.setOnRefreshListener {
-            if (state.state != ProgressState.Loading ||
+            if (state.state != ProgressState.Loading &&
                 state.state != ProgressState.Refreshing
             ) {
                 Analytics.send(Portfolio.Refreshed())
@@ -198,8 +217,8 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
     }
 
     private fun setupCardImage(state: WalletState) {
-        //TODO: SaltPay: remove hardCode
-        if (store.state.globalState.scanResponse?.isSaltPay() == true) {
+        // TODO: SaltPay: remove hardCode
+        if (store.state.globalState.scanResponse?.cardTypesResolver?.isSaltPay() == true) {
             binding.ivCard.load(R.drawable.img_salt_pay_visa) {
                 scale(Scale.FIT)
                 crossfade(enable = true)
@@ -227,7 +246,6 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
                         DetailsAction.PrepareScreen(
                             scanResponse = scanNoteResponse,
                             wallets = store.state.walletState.walletManagers.map { it.wallet },
-                            cardTou = CardTou(),
                         ),
                     )
                     store.dispatch(NavigationAction.NavigateTo(AppScreen.Details))

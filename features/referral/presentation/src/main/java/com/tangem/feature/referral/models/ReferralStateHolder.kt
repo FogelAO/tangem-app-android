@@ -4,6 +4,7 @@ internal data class ReferralStateHolder(
     val headerState: HeaderState,
     val referralInfoState: ReferralInfoState,
     val errorSnackbar: ErrorSnackbar? = null,
+    val analytics: Analytics,
 ) {
 
     data class HeaderState(val onBackClicked: () -> Unit)
@@ -42,5 +43,10 @@ internal data class ReferralStateHolder(
         val throwable: Throwable,
         val onOkClicked: () -> Unit,
     )
-}
 
+    data class Analytics(
+        val onAgreementClicked: () -> Unit,
+        val onCopyClicked: () -> Unit,
+        val onShareClicked: () -> Unit,
+    )
+}

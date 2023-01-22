@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+@Suppress("ConstructorParameterNaming")
 @Immutable
 data class TangemDimens internal constructor(
     // region Elevation
@@ -20,6 +21,7 @@ data class TangemDimens internal constructor(
     // endregion Elevation
     // region Radius
     val radius2: Dp = 2.dp,
+    val radius3: Dp = 3.dp,
     val radius4: Dp = 4.dp,
     val radius6: Dp = 6.dp,
     val radius8: Dp = 8.dp,
@@ -30,6 +32,7 @@ data class TangemDimens internal constructor(
     // region Size
     val size0: Dp = 0.dp,
     val size0_5: Dp = 0.5.dp,
+    val size2: Dp = 2.dp,
     val size4: Dp = 4.dp,
     val size8: Dp = 8.dp,
     val size11: Dp = 11.dp,
@@ -61,8 +64,10 @@ data class TangemDimens internal constructor(
     val size200: Dp = 200.dp,
     // endregion Size
     // region Spacing
+    val spacing0_5: Dp = 0.5.dp,
     val spacing2: Dp = 2.dp,
     val spacing4: Dp = 4.dp,
+    val spacing6: Dp = 6.dp,
     val spacing8: Dp = 8.dp,
     val spacing10: Dp = 10.dp,
     val spacing12: Dp = 12.dp,
@@ -75,6 +80,7 @@ data class TangemDimens internal constructor(
     val spacing34: Dp = 34.dp,
     val spacing44: Dp = 44.dp,
     val spacing50: Dp = 50.dp,
+    val spacing52: Dp = 52.dp,
     val spacing54: Dp = 54.dp,
     val spacing56: Dp = 56.dp,
     val spacing92: Dp = 92.dp,

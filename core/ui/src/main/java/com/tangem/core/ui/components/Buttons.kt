@@ -35,17 +35,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import com.tangem.core.ui.R
 import com.tangem.core.ui.res.TangemTheme
-import com.tangem.core.ui.res.TangemTypography
 
 /**
  * [Show in Figma](https://www.figma.com/file/14ISV23YB1yVW1uNVwqrKv/Android?node-id=97%3A103&t=TmfD6UBHPg9uYfev-4)
  * */
 @Composable
 fun TextButton(
-    modifier: Modifier = Modifier,
     text: String,
-    enabled: Boolean = true,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     TangemButton(
         modifier = modifier,
@@ -64,11 +63,11 @@ fun TextButton(
  * */
 @Composable
 fun TextButtonIconLeft(
-    modifier: Modifier = Modifier,
     text: String,
     icon: Painter,
-    enabled: Boolean = true,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     TangemButton(
         modifier = modifier,
@@ -84,10 +83,10 @@ fun TextButtonIconLeft(
 
 @Composable
 fun WarningTextButton(
-    modifier: Modifier = Modifier,
     text: String,
-    enabled: Boolean = true,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     TangemButton(
         modifier = modifier,
@@ -103,11 +102,11 @@ fun WarningTextButton(
 
 @Composable
 fun PrimaryButton(
-    modifier: Modifier = Modifier,
     text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     showProgress: Boolean = false,
     enabled: Boolean = true,
-    onClick: () -> Unit,
 ) {
     TangemButton(
         modifier = modifier,
@@ -125,12 +124,12 @@ fun PrimaryButton(
  * */
 @Composable
 fun PrimaryButtonIconRight(
-    modifier: Modifier = Modifier,
     text: String,
     icon: Painter,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     showProgress: Boolean = false,
     enabled: Boolean = true,
-    onClick: () -> Unit,
 ) {
     TangemButton(
         modifier = modifier,
@@ -148,12 +147,12 @@ fun PrimaryButtonIconRight(
  * */
 @Composable
 fun PrimaryButtonIconLeft(
-    modifier: Modifier = Modifier,
     text: String,
     icon: Painter,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     showProgress: Boolean = false,
     enabled: Boolean = true,
-    onClick: () -> Unit,
 ) {
     TangemButton(
         modifier = modifier,
@@ -168,11 +167,11 @@ fun PrimaryButtonIconLeft(
 
 @Composable
 fun SecondaryButton(
-    modifier: Modifier = Modifier,
     text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     showProgress: Boolean = false,
     enabled: Boolean = true,
-    onClick: () -> Unit,
 ) {
     TangemButton(
         modifier = modifier,
@@ -190,12 +189,12 @@ fun SecondaryButton(
  * */
 @Composable
 fun SecondaryButtonIconRight(
-    modifier: Modifier = Modifier,
     text: String,
     icon: Painter,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     showProgress: Boolean = false,
     enabled: Boolean = true,
-    onClick: () -> Unit,
 ) {
     TangemButton(
         modifier = modifier,
@@ -213,12 +212,12 @@ fun SecondaryButtonIconRight(
  * */
 @Composable
 fun SecondaryButtonIconLeft(
-    modifier: Modifier = Modifier,
     text: String,
     icon: Painter,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     showProgress: Boolean = false,
     enabled: Boolean = true,
-    onClick: () -> Unit,
 ) {
     TangemButton(
         modifier = modifier,
@@ -232,15 +231,16 @@ fun SecondaryButtonIconLeft(
 }
 
 // region Defaults
+@Suppress("LongParameterList")
 @Composable
 private fun TangemButton(
-    modifier: Modifier = Modifier,
     text: String,
     icon: TangemButtonIcon,
     onClick: () -> Unit,
     colors: ButtonColors,
     showProgress: Boolean,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
     size: TangemButtonSize = TangemButtonSize.Default,
     elevation: ButtonElevation = TangemButtonsDefaults.elevation,
 ) {
@@ -286,29 +286,31 @@ private fun ButtonContent(
         )
     }
 
-    if (showProgress) Box(
-        modifier = Modifier.wrapContentSize(),
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(TangemTheme.dimens.size24),
-            color = colors.contentColor(enabled = enabled).value,
-            strokeWidth = TangemTheme.dimens.size4,
-        )
-    } else Row {
-        if (buttonIcon is TangemButtonIcon.Left) {
-            icon(buttonIcon.painter)
-            Spacer(modifier = Modifier.width(TangemTheme.dimens.size8))
+    if (showProgress) {
+        Box(modifier = Modifier.wrapContentSize()) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(TangemTheme.dimens.size24),
+                color = colors.contentColor(enabled = enabled).value,
+                strokeWidth = TangemTheme.dimens.size4,
+            )
         }
-        Text(
-            text = text,
-            style = TangemTypography.button,
-            color = colors.contentColor(enabled = enabled).value,
-        )
-        if (buttonIcon is TangemButtonIcon.Right) {
-            Spacer(modifier = Modifier.width(TangemTheme.dimens.size8))
-            icon(buttonIcon.painter)
+    } else {
+        Row {
+            if (buttonIcon is TangemButtonIcon.Left) {
+                icon(buttonIcon.painter)
+                Spacer(modifier = Modifier.width(TangemTheme.dimens.size8))
+            }
+            Text(
+                text = text,
+                style = TangemTheme.typography.button,
+                color = colors.contentColor(enabled = enabled).value,
+            )
+            if (buttonIcon is TangemButtonIcon.Right) {
+                Spacer(modifier = Modifier.width(TangemTheme.dimens.size8))
+                icon(buttonIcon.painter)
+            }
         }
     }
 }

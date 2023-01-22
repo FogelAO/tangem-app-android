@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,7 +40,6 @@ import com.valentinilk.shimmer.shimmer
  */
 @Composable
 fun SmallInfoCard(
-    modifier: Modifier = Modifier,
     startText: String,
     endText: String,
     isLoading: Boolean = false,
@@ -50,7 +50,6 @@ fun SmallInfoCard(
         elevation = TangemTheme.dimens.elevation2,
     ) {
         CardInfoBox(
-            modifier = modifier,
             startText = startText,
             endText = endText,
             isLoading = isLoading,
@@ -70,7 +69,6 @@ fun SmallInfoCard(
  */
 @Composable
 fun SmallInfoCardWithWarning(
-    modifier: Modifier = Modifier,
     startText: String,
     endText: String,
     warningText: String,
@@ -81,12 +79,10 @@ fun SmallInfoCardWithWarning(
         elevation = TangemTheme.dimens.elevation2,
     ) {
         Column(
-            modifier = modifier
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-
             CardInfoBox(startText = startText, endText = endText)
 
             Divider(
@@ -142,12 +138,12 @@ fun SmallInfoCardWithWarning(
  * @param icon icon to the left
  * @param additionalContent shown at the right edge of the card
  *
- * @see <a href = "https://www.figma.com/file/Vs6SkVsFnUPsSCNwlnVf5U/Android-%E2%80%93-UI?node-id=1123%3A4040&t=izokIIb9WWetO32R-1"
+ * @see <a href =
+ * "https://www.figma.com/file/Vs6SkVsFnUPsSCNwlnVf5U/Android-%E2%80%93-UI?node-id=1123%3A4040&t=izokIIb9WWetO32R-1"
  * >Figma component</a>
  */
 @Composable
 fun CardWithIcon(
-    modifier: Modifier = Modifier,
     title: String,
     description: String,
     icon: @Composable () -> Unit,
@@ -159,7 +155,6 @@ fun CardWithIcon(
         elevation = TangemTheme.dimens.elevation2,
     ) {
         IconWithTitleAndDescription(
-            modifier = modifier,
             title = title,
             description = description,
             icon = icon,
@@ -177,7 +172,8 @@ fun CardWithIcon(
  * @param icon icon to the left
  * @param additionalContent shown at the right edge of the card
  *
- * @see <a href = "https://www.figma.com/file/Vs6SkVsFnUPsSCNwlnVf5U/Android-%E2%80%93-UI?node-id=1123%3A4040&t=izokIIb9WWetO32R-1"
+ * @see <a href =
+ * "https://www.figma.com/file/Vs6SkVsFnUPsSCNwlnVf5U/Android-%E2%80%93-UI?node-id=1123%3A4040&t=izokIIb9WWetO32R-1"
  * >Figma component</a>
  */
 @Composable
@@ -186,10 +182,9 @@ fun IconWithTitleAndDescription(
     description: String,
     icon: @Composable () -> Unit,
     additionalContent: @Composable () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .wrapContentHeight()
             .fillMaxWidth()
             .padding(
@@ -199,7 +194,6 @@ fun IconWithTitleAndDescription(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-
         Box(
             modifier = Modifier
                 .background(
@@ -242,15 +236,14 @@ fun IconWithTitleAndDescription(
 
 @Composable
 private fun CardInfoBox(
-    modifier: Modifier = Modifier,
     startText: String,
     endText: String,
     isLoading: Boolean = false,
 ) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .height(TangemTheme.dimens.size48)
+            .heightIn(TangemTheme.dimens.size48)
             .padding(
                 horizontal = TangemTheme.dimens.spacing16,
                 vertical = TangemTheme.dimens.spacing12,
@@ -268,10 +261,11 @@ private fun CardInfoBox(
         if (isLoading) {
             Box(
                 modifier = Modifier
+                    .size(width = TangemTheme.dimens.size40, height = TangemTheme.dimens.size12)
                     .shimmer()
-                    .size(
-                        width = TangemTheme.dimens.size80,
-                        height = TangemTheme.dimens.size20,
+                    .background(
+                        color = TangemTheme.colors.button.secondary,
+                        shape = RoundedCornerShape(TangemTheme.dimens.radius3),
                     ),
             )
         } else {
@@ -289,6 +283,7 @@ private fun CardInfoBox(
 
 // region Preview
 
+@Suppress("MagicNumber")
 @Composable
 private fun CardsPreview() {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -299,8 +294,8 @@ private fun CardsPreview() {
         SmallInfoCardWithWarning(
             startText = "Balance",
             endText = "0.4405434 BTC",
-            warningText =
-            "Not enough funds for fee on your Polygon wallet  to create a transaction. Top up your Polygon wallet first.",
+            warningText = "Not enough funds for fee on your Polygon wallet  to create a transaction. " +
+                "Top up your Polygon wallet first.",
         )
 
         SpacerH32()
@@ -321,7 +316,7 @@ private fun CardsPreview() {
 
 @Preview(showBackground = true)
 @Composable
-fun Preview_Cards_InLightTheme() {
+private fun Preview_Cards_InLightTheme() {
     TangemTheme(isDark = false) {
         CardsPreview()
     }
@@ -329,10 +324,25 @@ fun Preview_Cards_InLightTheme() {
 
 @Preview(showBackground = true)
 @Composable
-fun Preview_InfoCardWithWarning_InDarkTheme() {
+private fun Preview_InfoCardWithWarning_InDarkTheme() {
     TangemTheme(isDark = true) {
         CardsPreview()
     }
 }
 
+@Preview(widthDp = 328, heightDp = 48, showBackground = true)
+@Composable
+private fun Preview_SimpleInfoCard_InLightTheme() {
+    TangemTheme(isDark = false) {
+        SmallInfoCard(startText = "Balance", endText = "0.4405434 BTC")
+    }
+}
+
+@Preview(widthDp = 328, heightDp = 48, showBackground = true)
+@Composable
+private fun Preview_SimpleInfoCard_InDarkTheme() {
+    TangemTheme(isDark = true) {
+        SmallInfoCard(startText = "Balance", endText = "0.4405434 BTC")
+    }
+}
 // endregion Preview

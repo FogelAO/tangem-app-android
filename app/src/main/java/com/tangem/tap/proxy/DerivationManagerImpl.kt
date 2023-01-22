@@ -12,7 +12,7 @@ import com.tangem.domain.common.TapWorkarounds.derivationStyle
 import com.tangem.domain.common.extensions.fromNetworkId
 import com.tangem.lib.crypto.DerivationManager
 import com.tangem.lib.crypto.models.Currency
-import com.tangem.lib.crypto.models.NonNativeToken
+import com.tangem.lib.crypto.models.Currency.NonNativeToken
 import com.tangem.operations.derivation.ExtendedPublicKeysMap
 import com.tangem.tap.DELAY_SDK_DIALOG_CLOSE
 import com.tangem.tap.common.extensions.dispatchDebugErrorNotification
@@ -89,6 +89,8 @@ class DerivationManagerImpl(
         }
 
         scope.launch {
+            val selectedWallet = appStateHolder.userWalletsListManager?.selectedUserWalletSync
+
             val result = appStateHolder.tangemSdkManager?.derivePublicKeys(
                 scanResponse.card.cardId,
                 derivations,
@@ -108,15 +110,22 @@ class DerivationManagerImpl(
                     val updatedScanResponse = scanResponse.copy(
                         derivedKeys = updatedDerivedKeys,
                     )
-                    appStateHolder.mainStore?.dispatchOnMain(GlobalAction.SaveScanNoteResponse(updatedScanResponse))
+                    if (selectedWallet != null) {
+                        val userWallet = selectedWallet.copy(
+                            scanResponse = updatedScanResponse,
+                        )
+
+                        appStateHolder.userWalletsListManager?.save(userWallet, canOverride = true)
+                        appStateHolder.walletStoresManager?.fetch(userWallet, true)
+                    }
+                    appStateHolder.mainStore?.dispatchOnMain(GlobalAction.SaveScanResponse(updatedScanResponse))
                     delay(DELAY_SDK_DIALOG_CLOSE)
                     onSuccess(updatedScanResponse)
                 }
                 is CompletionResult.Failure -> {
                     appStateHolder.mainStore?.dispatchDebugErrorNotification(
                         TapError.CustomError(
-                            "Error adding " +
-                                "tokens",
+                            "Error derivation",
                         ),
                     )
                 }

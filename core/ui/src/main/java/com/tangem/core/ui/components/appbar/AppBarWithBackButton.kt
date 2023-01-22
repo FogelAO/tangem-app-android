@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.Icon
-import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -31,13 +30,13 @@ import com.tangem.core.ui.res.TangemTheme
  */
 @Composable
 fun AppBarWithBackButton(
+    onBackClick: () -> Unit,
     text: String? = null,
     @DrawableRes iconRes: Int? = null,
-    onBackClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
-            .background(MaterialTheme.colors.primary)
+            .background(color = TangemTheme.colors.background.secondary)
             .fillMaxWidth()
             .padding(all = dimensionResource(R.dimen.spacing16)),
         horizontalArrangement = Arrangement.spacedBy(dimensionResource(R.dimen.spacing16)),
@@ -49,14 +48,14 @@ fun AppBarWithBackButton(
             modifier = Modifier
                 .size(size = dimensionResource(R.dimen.size24))
                 .clickable { onBackClick() },
-            tint = MaterialTheme.colors.onPrimary,
+            tint = TangemTheme.colors.icon.primary1,
         )
         if (!text.isNullOrBlank()) {
             Text(
                 text = text,
-                color = MaterialTheme.colors.onPrimary,
+                color = TangemTheme.colors.text.primary1,
                 maxLines = 1,
-                style = MaterialTheme.typography.subtitle1,
+                style = TangemTheme.typography.subtitle1,
             )
         }
     }
@@ -64,7 +63,7 @@ fun AppBarWithBackButton(
 
 @Preview(widthDp = 360, heightDp = 56, showBackground = true)
 @Composable
-fun PreviewAppBarWithBackButtonInLightTheme() {
+private fun PreviewAppBarWithBackButtonInLightTheme() {
     TangemTheme(isDark = false) {
         AppBarWithBackButton(text = "Title", onBackClick = {})
     }
@@ -72,7 +71,7 @@ fun PreviewAppBarWithBackButtonInLightTheme() {
 
 @Preview(widthDp = 360, heightDp = 56, showBackground = true)
 @Composable
-fun PreviewAppBarWithBackButtonInDarkTheme() {
+private fun PreviewAppBarWithBackButtonInDarkTheme() {
     TangemTheme(isDark = true) {
         AppBarWithBackButton(text = "Title", onBackClick = {})
     }

@@ -4,12 +4,13 @@ import android.app.Application
 import android.content.Intent
 import com.google.android.gms.wallet.PaymentData
 import com.shopify.buy3.Storefront
-import com.tangem.tap.common.analytics.Analytics
+import com.tangem.core.analytics.Analytics
 import com.tangem.tap.common.analytics.converters.ShopOrderToEventConverter
 import com.tangem.tap.common.extensions.filterNotNull
 import com.tangem.tap.common.shop.data.ProductType
 import com.tangem.tap.common.shop.data.TangemProduct
 import com.tangem.tap.common.shop.data.TotalSum
+import com.tangem.tap.common.shop.googlepay.GooglePayService
 import com.tangem.tap.common.shop.shopify.ShopifyService
 import com.tangem.tap.common.shop.shopify.ShopifyShop
 import com.tangem.tap.common.shop.shopify.data.CheckoutItem
@@ -87,7 +88,8 @@ class TangemShopService(application: Application, shopifyShop: ShopifyShop) {
     fun buyWithGooglePay(productType: ProductType) {
         val totalPrice = checkouts[productType]!!.totalPriceV2.amount
         googlePayService.payWithGooglePay(
-            totalPriceCents = totalPrice, currencyCode = checkouts[productType]!!.currencyCode.name,
+            totalPriceCents = totalPrice,
+            currencyCode = checkouts[productType]!!.currencyCode.name,
             merchantID = shopifyService.shop.merchantID,
         )
     }
@@ -188,7 +190,7 @@ class TangemShopService(application: Application, shopifyShop: ShopifyShop) {
                     appliedDiscount = it.getAppliedDiscount(),
                 ),
 
-                )
+            )
         }
         return Result.failure(result.exceptionOrNull()!!)
     }
@@ -208,8 +210,8 @@ class TangemShopService(application: Application, shopifyShop: ShopifyShop) {
     }
 
     companion object {
-        const val TANGEM_WALLET_2_CARDS_SKU = "TG115x2"
-        const val TANGEM_WALLET_3_CARDS_SKU = "TG115x3"
+        const val TANGEM_WALLET_2_CARDS_SKU = "TG115X2-S"
+        const val TANGEM_WALLET_3_CARDS_SKU = "TG115X3-S"
         val SKUS_TO_DISPLAY = listOf(TANGEM_WALLET_2_CARDS_SKU, TANGEM_WALLET_3_CARDS_SKU)
     }
 }

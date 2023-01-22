@@ -4,7 +4,7 @@ import com.tangem.common.CompletionResult
 import com.tangem.common.doOnFailure
 import com.tangem.common.doOnSuccess
 import com.tangem.common.flatMap
-import com.tangem.tap.common.analytics.Analytics
+import com.tangem.core.analytics.Analytics
 import com.tangem.tap.common.analytics.events.AnalyticsParam
 import com.tangem.tap.common.analytics.events.MainScreen
 import com.tangem.tap.common.analytics.events.Onboarding
@@ -88,13 +88,12 @@ internal class SaveWalletMiddleware {
         scope.launch {
             val userWallet = UserWalletBuilder(scanResponse)
                 .backupCardsIds(state.backupInfo?.backupCardsIds)
-                .build()
+                .build() ?: return@launch
 
             val isFirstSavedWallet = !userWalletsListManager.hasSavedUserWallets
 
             saveAccessCodeIfNeeded(state.backupInfo?.accessCode, userWallet.cardsInWallet)
                 .flatMap { userWalletsListManager.save(userWallet, canOverride = true) }
-                .flatMap { userWalletsListManager.selectWallet(userWallet.walletId) }
                 .doOnFailure { error ->
                     store.dispatchOnMain(SaveWalletAction.Save.Error(error))
                 }
@@ -104,12 +103,6 @@ internal class SaveWalletMiddleware {
                     // Enable saving access codes only if this is the first time user save the wallet
                     preferencesStorage.shouldSaveAccessCodes = isFirstSavedWallet ||
                         preferencesStorage.shouldSaveAccessCodes
-
-
-                    tangemSdkManager.setAccessCodeRequestPolicy(
-                        useBiometricsForAccessCode = preferencesStorage.shouldSaveAccessCodes &&
-                            userWallet.hasAccessCode,
-                    )
 
                     store.dispatchOnMain(SaveWalletAction.Save.Success)
 

@@ -7,10 +7,11 @@ import com.tangem.tap.domain.userWalletList.model.UserWalletEncryptionKey
 import com.tangem.tap.domain.userWalletList.model.UserWalletSensitiveInformation
 
 internal interface UserWalletsSensitiveInformationRepository {
-    suspend fun save(userWallet: UserWallet): CompletionResult<Unit>
+    suspend fun save(userWallet: UserWallet, encryptionKey: ByteArray?): CompletionResult<Unit>
     suspend fun getAll(
         encryptionKeys: List<UserWalletEncryptionKey>,
     ): CompletionResult<Map<UserWalletId, UserWalletSensitiveInformation>>
 
-    suspend fun delete(walletIds: List<UserWalletId>): CompletionResult<Unit>
+    suspend fun delete(userWalletsIds: List<UserWalletId>): CompletionResult<Unit>
+    suspend fun clear(): CompletionResult<Unit>
 }

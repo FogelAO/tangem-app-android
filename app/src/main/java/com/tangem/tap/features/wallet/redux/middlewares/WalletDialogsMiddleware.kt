@@ -1,6 +1,6 @@
 package com.tangem.tap.features.wallet.redux.middlewares
 
-import com.tangem.tap.common.analytics.Analytics
+import com.tangem.core.analytics.Analytics
 import com.tangem.tap.common.analytics.events.AnalyticsParam
 import com.tangem.tap.common.analytics.events.Token
 import com.tangem.tap.common.extensions.dispatchDialogHide
@@ -17,10 +17,16 @@ class WalletDialogsMiddleware {
                 store.dispatchDialogShow(WalletDialog.SignedHashesMultiWalletDialog)
             }
             is WalletAction.DialogAction.ChooseTradeActionDialog -> {
-                store.state.walletState.getSelectedWalletData()?.let {
+                store.state.walletState.selectedWalletData?.let {
                     Analytics.send(Token.ButtonExchange(AnalyticsParam.CurrencyType.Currency(it.currency)))
                 }
-                store.dispatchDialogShow(WalletDialog.ChooseTradeActionDialog)
+                store.dispatchDialogShow(
+                    WalletDialog.ChooseTradeActionDialog(
+                        buyAllowed = action.buyAllowed,
+                        sellAllowed = action.sellAllowed,
+                        swapAllowed = action.swapAllowed,
+                    ),
+                )
             }
             is WalletAction.DialogAction.QrCode -> {
                 store.dispatchDialogShow(

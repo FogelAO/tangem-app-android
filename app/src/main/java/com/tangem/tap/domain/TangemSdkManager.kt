@@ -21,6 +21,7 @@ import com.tangem.common.extensions.ByteArrayKey
 import com.tangem.common.hdWallet.DerivationPath
 import com.tangem.common.map
 import com.tangem.common.usersCode.UserCodeRepository
+import com.tangem.core.analytics.Analytics
 import com.tangem.domain.common.CardDTO
 import com.tangem.domain.common.ScanResponse
 import com.tangem.operations.CommandResponse
@@ -30,7 +31,6 @@ import com.tangem.operations.derivation.DeriveMultipleWalletPublicKeysTask
 import com.tangem.operations.pins.CheckUserCodesCommand
 import com.tangem.operations.pins.CheckUserCodesResponse
 import com.tangem.operations.pins.SetUserCodeCommand
-import com.tangem.tap.common.analytics.Analytics
 import com.tangem.tap.common.analytics.events.Basic
 import com.tangem.tap.domain.tasks.CreateWalletAndRescanTask
 import com.tangem.tap.domain.tasks.product.CreateProductWalletTask
@@ -46,6 +46,14 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 class TangemSdkManager(private val tangemSdk: TangemSdk, private val context: Context) {
+
+    private val userCodeRepository by lazy {
+        UserCodeRepository(
+            biometricManager = tangemSdk.biometricManager,
+            secureStorage = tangemSdk.secureStorage,
+        )
+    }
+
     val canUseBiometry: Boolean
         get() = tangemSdk.biometricManager.canAuthenticate || needEnrollBiometrics
 
@@ -77,7 +85,7 @@ class TangemSdkManager(private val tangemSdk: TangemSdk, private val context: Co
         scanResponse: ScanResponse,
     ): CompletionResult<CreateProductWalletTaskResponse> {
         return runTaskAsync(
-            CreateProductWalletTask(scanResponse.productType),
+            CreateProductWalletTask(scanResponse.cardTypesResolver),
             scanResponse.card.cardId,
             Message(context.getString(R.string.initial_message_create_wallet_body)),
         )
@@ -119,8 +127,8 @@ class TangemSdkManager(private val tangemSdk: TangemSdk, private val context: Co
     }
 
     suspend fun saveAccessCode(accessCode: String, cardsIds: Set<String>): CompletionResult<Unit> {
-        return createUserCodeRepository().save(
-            cardIds = cardsIds,
+        return userCodeRepository.save(
+            cardsIds = cardsIds,
             userCode = UserCode(
                 type = UserCodeType.AccessCode,
                 stringValue = accessCode,
@@ -128,8 +136,12 @@ class TangemSdkManager(private val tangemSdk: TangemSdk, private val context: Co
         )
     }
 
+    suspend fun deleteSavedUserCodes(cardsIds: Set<String>): CompletionResult<Unit> {
+        return userCodeRepository.delete(cardsIds.toSet())
+    }
+
     suspend fun clearSavedUserCodes(): CompletionResult<Unit> {
-        return createUserCodeRepository().clear()
+        return userCodeRepository.clear()
     }
 
     suspend fun setPasscode(cardId: String?): CompletionResult<SuccessResponse> {
@@ -166,9 +178,10 @@ class TangemSdkManager(private val tangemSdk: TangemSdk, private val context: Co
 
     suspend fun scanCard(
         cardId: String? = null,
+        allowRequestAccessCodeFromRepository: Boolean = false,
     ): CompletionResult<CardDTO> {
         return runTaskAsyncReturnOnMain(
-            runnable = ScanTask(),
+            runnable = ScanTask(allowRequestAccessCodeFromRepository),
             cardId = cardId,
             initialMessage = Message(context.getString(R.string.initial_message_tap_header)),
         )
@@ -198,11 +211,12 @@ class TangemSdkManager(private val tangemSdk: TangemSdk, private val context: Co
         return withContext(Dispatchers.Main) { result }
     }
 
+    @Suppress("MagicNumber")
     fun changeDisplayedCardIdNumbersCount(scanResponse: ScanResponse?) {
         tangemSdk.config.cardIdDisplayFormat = when {
             scanResponse == null -> CardIdDisplayFormat.Full
-            scanResponse.isTangemTwins() -> CardIdDisplayFormat.LastLuhn(4)
-            scanResponse.isSaltPay() -> CardIdDisplayFormat.None
+            scanResponse.cardTypesResolver.isTangemTwins() -> CardIdDisplayFormat.LastLuhn(4)
+            scanResponse.cardTypesResolver.isSaltPay() -> CardIdDisplayFormat.None
             else -> CardIdDisplayFormat.Full
         }
     }
@@ -221,11 +235,9 @@ class TangemSdkManager(private val tangemSdk: TangemSdk, private val context: Co
         }
     }
 
-    private fun createUserCodeRepository() = with(tangemSdk) {
-        UserCodeRepository(
-            biometricManager = biometricManager,
-            secureStorage = secureStorage,
-        )
+    fun useBiometricsForAccessCode(): Boolean {
+        val policy = tangemSdk.config.userCodeRequestPolicy
+        return policy is UserCodeRequestPolicy.AlwaysWithBiometrics && policy.codeType == UserCodeType.AccessCode
     }
 
     companion object {

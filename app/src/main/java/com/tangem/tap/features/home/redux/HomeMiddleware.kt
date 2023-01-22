@@ -17,7 +17,7 @@ import com.tangem.tap.domain.model.builders.UserWalletBuilder
 import com.tangem.tap.domain.scanCard.ScanCardProcessor
 import com.tangem.tap.features.home.BELARUS_COUNTRY_CODE
 import com.tangem.tap.features.home.RUSSIA_COUNTRY_CODE
-import com.tangem.tap.features.home.redux.HomeMiddleware.Companion.BUY_WALLET_URL
+import com.tangem.tap.features.home.redux.HomeMiddleware.BUY_WALLET_URL
 import com.tangem.tap.features.send.redux.states.ButtonState
 import com.tangem.tap.preferencesStorage
 import com.tangem.tap.scope
@@ -30,12 +30,10 @@ import org.rekotlin.Action
 import org.rekotlin.Middleware
 import timber.log.Timber
 
-class HomeMiddleware {
-    companion object {
-        val handler = homeMiddleware
+object HomeMiddleware {
+    val handler = homeMiddleware
 
-        const val BUY_WALLET_URL = "https://tangem.com/ru/resellers/"
-    }
+    const val BUY_WALLET_URL = "https://tangem.com/ru/resellers/"
 }
 
 private val homeMiddleware: Middleware<AppState> = { _, _ ->
@@ -57,7 +55,7 @@ private fun handleHomeAction(action: Action) {
         is HomeAction.ShouldScanCardOnResume -> {
             if (action.shouldScanCard) {
                 store.dispatch(HomeAction.ShouldScanCardOnResume(false))
-                postUiDelayBg(700) { store.dispatch(HomeAction.ReadCard) }
+                postUiDelayBg(ms = 700) { store.dispatch(HomeAction.ReadCard) }
             }
         }
         is HomeAction.ReadCard -> readCard()
@@ -79,35 +77,33 @@ private fun readCard() = scope.launch {
         onProgressStateChange = { showProgress ->
             if (showProgress) {
                 changeButtonState(ButtonState.PROGRESS)
-            } else {
-                changeButtonState(ButtonState.ENABLED)
             }
+            // else { //todo hide this because
+            //     changeButtonState(ButtonState.ENABLED)
+            // }
         },
         onScanStateChange = { scanInProgress ->
             store.dispatch(HomeAction.ScanInProgress(scanInProgress))
         },
+        onFailure = {
+            changeButtonState(ButtonState.ENABLED)
+        },
         onSuccess = { scanResponse ->
             scope.launch {
                 if (preferencesStorage.shouldSaveUserWallets) {
-                    val userWallet = UserWalletBuilder(scanResponse).build()
-                    userWalletsListManager.save(userWallet)
-                        .doOnFailure { error ->
-                            Timber.e(error, "Unable to save user wallet")
-                            tangemSdkManager.setAccessCodeRequestPolicy(useBiometricsForAccessCode = false)
-                            store.onCardScanned(scanResponse)
-                        }
-                        .doOnSuccess {
-                            tangemSdkManager.setAccessCodeRequestPolicy(
-                                useBiometricsForAccessCode = preferencesStorage.shouldSaveAccessCodes &&
-                                    userWallet.hasAccessCode,
-                            )
-                            store.onUserWalletSelected(userWallet)
-                        }
-                        .doOnResult {
-                            store.dispatchOnMain(NavigationAction.NavigateTo(AppScreen.Wallet))
-                        }
+                    val userWallet = UserWalletBuilder(scanResponse).build() ?: return@launch
+                    userWalletsListManager.save(userWallet).doOnFailure { error ->
+                        Timber.e(error, "Unable to save user wallet")
+                        store.onCardScanned(scanResponse)
+                    }.doOnSuccess {
+                        scope.launch { store.onUserWalletSelected(userWallet) }
+                    }.doOnResult {
+                        changeButtonState(ButtonState.ENABLED)
+                        store.dispatchOnMain(NavigationAction.NavigateTo(AppScreen.Wallet))
+                    }
                 } else {
                     store.onCardScanned(scanResponse)
+                    changeButtonState(ButtonState.ENABLED)
                     store.dispatchOnMain(NavigationAction.NavigateTo(AppScreen.Wallet))
                 }
             }
@@ -116,5 +112,5 @@ private fun readCard() = scope.launch {
 }
 
 private fun changeButtonState(state: ButtonState) {
-    store.dispatch(HomeAction.ChangeScanCardButtonState(IndeterminateProgressButton(state)))
+    store.dispatchOnMain(HomeAction.ChangeScanCardButtonState(IndeterminateProgressButton(state)))
 }

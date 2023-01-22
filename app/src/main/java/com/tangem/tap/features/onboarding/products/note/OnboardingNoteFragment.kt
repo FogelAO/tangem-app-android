@@ -9,7 +9,7 @@ import androidx.core.view.isVisible
 import androidx.transition.TransitionManager
 import coil.load
 import com.tangem.blockchain.common.Blockchain
-import com.tangem.tap.common.analytics.Analytics
+import com.tangem.core.analytics.Analytics
 import com.tangem.tap.common.analytics.events.Onboarding
 import com.tangem.tap.common.extensions.getDrawableCompat
 import com.tangem.tap.common.extensions.stripZeroPlainString
@@ -159,7 +159,8 @@ class OnboardingNoteFragment : BaseOnboardingFragment<OnboardingNoteState>() {
             state.walletBalance.amountToCreateAccount?.let { amount ->
                 val tvBodyMessage = getString(
                     R.string.onboarding_top_up_body_no_account_error,
-                    amount, state.walletBalance.currency.currencySymbol,
+                    amount,
+                    state.walletBalance.currency.currencySymbol,
                 )
                 tvBody.text = tvBodyMessage
             }

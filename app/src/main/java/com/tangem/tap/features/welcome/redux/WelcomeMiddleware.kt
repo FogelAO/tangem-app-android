@@ -36,7 +36,7 @@ internal class WelcomeMiddleware {
     private fun handleAction(action: WelcomeAction, state: WelcomeState) {
         when (action) {
             is WelcomeAction.ProceedWithBiometrics -> {
-                proceedWithBiometry(state)
+                proceedWithBiometrics(state)
             }
             is WelcomeAction.ProceedWithCard -> {
                 proceedWithCard(state)
@@ -51,7 +51,7 @@ internal class WelcomeMiddleware {
         }
     }
 
-    private fun proceedWithBiometry(state: WelcomeState) {
+    private fun proceedWithBiometrics(state: WelcomeState) {
         scope.launch {
             userWalletsListManager.unlockWithBiometry()
                 .doOnFailure { error ->
@@ -59,11 +59,6 @@ internal class WelcomeMiddleware {
                 }
                 .doOnSuccess { selectedUserWallet ->
                     if (selectedUserWallet != null) {
-                        tangemSdkManager.setAccessCodeRequestPolicy(
-                            useBiometricsForAccessCode = preferencesStorage.shouldSaveAccessCodes &&
-                                selectedUserWallet.hasAccessCode,
-                        )
-
                         store.dispatchOnMain(NavigationAction.NavigateTo(AppScreen.Wallet))
                         store.dispatchOnMain(WelcomeAction.ProceedWithBiometrics.Success)
                         store.onUserWalletSelected(selectedUserWallet)
@@ -76,10 +71,9 @@ internal class WelcomeMiddleware {
 
     private fun proceedWithCard(state: WelcomeState) = scope.launch {
         scanCardInternal { scanResponse ->
-            val userWallet = UserWalletBuilder(scanResponse).build()
+            val userWallet = UserWalletBuilder(scanResponse).build() ?: return@scanCardInternal
 
-            tangemSdkManager.setAccessCodeRequestPolicy(useBiometricsForAccessCode = false)
-            userWalletsListManager.unlockWithCard(userWallet)
+            userWalletsListManager.save(userWallet, canOverride = true)
                 .doOnFailure { error ->
                     store.dispatchOnMain(WelcomeAction.ProceedWithCard.Error(error))
                 }
@@ -100,6 +94,9 @@ internal class WelcomeMiddleware {
     private suspend inline fun scanCardInternal(
         crossinline onCardScanned: suspend (ScanResponse) -> Unit,
     ) {
+        tangemSdkManager.setAccessCodeRequestPolicy(
+            useBiometricsForAccessCode = preferencesStorage.shouldSaveAccessCodes,
+        )
         ScanCardProcessor.scan(
             onSuccess = { scanResponse ->
                 scope.launch { onCardScanned(scanResponse) }

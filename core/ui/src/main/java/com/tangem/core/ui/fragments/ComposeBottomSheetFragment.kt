@@ -18,7 +18,6 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.tangem.core.ui.R
-import com.tangem.core.ui.components.SystemBarsEffect
 import com.tangem.core.ui.res.TangemTheme
 
 abstract class ComposeBottomSheetFragment<ScreenState> : BottomSheetDialogFragment() {
@@ -52,36 +51,31 @@ abstract class ComposeBottomSheetFragment<ScreenState> : BottomSheetDialogFragme
         return ComposeView(context).apply {
             setContent {
                 TangemTheme {
-                    val backgroundColor = TangemTheme.colors.background.plain
-                    SystemBarsEffect {
-                        setSystemBarsColor(
-                            color = backgroundColor,
-                        )
-                    }
-
                     ScreenContent(
+                        state = provideState().value,
                         modifier = Modifier
                             .fillMaxWidth()
                             .let {
                                 if (expandedHeightFraction != null) it.fillMaxHeight(expandedHeightFraction!!) else it
                             }
                             .background(
-                                color = backgroundColor,
+                                color = TangemTheme.colors.background.plain,
                                 shape = TangemTheme.shapes.bottomSheet,
                             ),
-                        state = provideState().value,
                     )
                 }
             }
         }
     }
 
+    @Suppress("TopLevelComposableFunctions")
     @Composable
     protected abstract fun provideState(): State<ScreenState>
 
+    @Suppress("TopLevelComposableFunctions")
     @Composable
     protected abstract fun ScreenContent(
-        modifier: Modifier,
         state: ScreenState,
+        modifier: Modifier,
     )
 }

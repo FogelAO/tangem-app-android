@@ -66,12 +66,19 @@ object Library {
     const val zendeskMessaging = "com.zendesk:messaging:" + Versions.zendeskMessaging
     const val zxingQrBarcodeScanner = "me.dm7.barcodescanner:zxing:" + Versions.zxingQrBarcodeScanner
     const val zxingQrCore = "com.google.zxing:core:" + Versions.zxingQrCode
+    const val mviCoreWatcher = "com.github.badoo.mvicore:mvicore-diff:" + Versions.mviCore
+    const val kotlinSerialization = "org.jetbrains.kotlinx:kotlinx-serialization-json:" + Versions.kotlinSerialization
 }
 
 object Tangem {
     const val blockchain = "com.tangem:blockchain:" + Versions.tangemBlockchainSdk
-    const val cardAndroid = "com.tangem.tangem-sdk-kotlin:android:" + Versions.tangemCardSgk
-    const val cardCore = "com.tangem.tangem-sdk-kotlin:core:" + Versions.tangemCardSgk
+    const val cardAndroid = "com.tangem.tangem-sdk-kotlin:android:" + Versions.tangemCardSdk
+    const val cardCore = "com.tangem.tangem-sdk-kotlin:core:" + Versions.tangemCardSdk
+}
+
+object Tools {
+    const val composeDetektRules = "ru.kode:detekt-rules-compose:" + Versions.composeDetektRules
+    const val formattingDetektRules = "io.gitlab.arturbosch.detekt:detekt-formatting:" + Versions.formattingDetektRules
 }
 
 object Test {

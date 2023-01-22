@@ -5,6 +5,7 @@ import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.widget.LinearLayout
 import androidx.core.view.isVisible
+import com.tangem.tap.common.extensions.hide
 import com.tangem.wallet.databinding.ViewWalletDetailsButtonsRowBinding
 
 internal class WalletDetailsButtonsRow @JvmOverloads constructor(
@@ -32,18 +33,11 @@ internal class WalletDetailsButtonsRow @JvmOverloads constructor(
         }
     }
 
-    fun updateButtonsVisibility(
-        exchangeServiceFeatureOn: Boolean,
-        buyAllowed: Boolean,
-        sellAllowed: Boolean,
-        sendAllowed: Boolean,
-    ) = with(binding) {
+    fun updateButtonsVisibility(exchangeServiceFeatureOn: Boolean, sendAllowed: Boolean) = with(binding) {
         containerExchangeButtons.isVisible = exchangeServiceFeatureOn
-
-        btnBuy.isVisible = (buyAllowed && !sellAllowed) || (!buyAllowed && !sellAllowed)
-        btnBuy.isEnabled = buyAllowed
-        btnSell.isVisible = !buyAllowed && sellAllowed
-        btnTrade.isVisible = buyAllowed && sellAllowed
+        btnBuy.hide()
+        btnSell.hide()
+        btnTrade.isVisible = exchangeServiceFeatureOn
         btnSend.isEnabled = sendAllowed
     }
 }

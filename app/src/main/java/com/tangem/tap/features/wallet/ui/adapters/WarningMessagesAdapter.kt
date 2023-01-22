@@ -7,7 +7,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.play.core.review.ReviewManagerFactory
-import com.tangem.tap.common.analytics.Analytics
+import com.tangem.core.analytics.Analytics
 import com.tangem.tap.common.analytics.events.AnalyticsParam
 import com.tangem.tap.common.analytics.events.MainScreen
 import com.tangem.tap.common.extensions.getActivity
@@ -28,7 +28,9 @@ class WarningMessagesAdapter : ListAdapter<WarningMessage, WarningMessageVH>(Dif
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): WarningMessageVH {
         val binding = LayoutWarningCardActionBinding.inflate(
-            LayoutInflater.from(parent.context), parent, false,
+            LayoutInflater.from(parent.context),
+            parent,
+            false,
         )
         return WarningMessageVH(binding)
     }
@@ -75,6 +77,7 @@ class WarningMessageVH(val binding: LayoutWarningCardActionBinding) : RecyclerVi
         binding.warningCardAction.setCardBackgroundColor(binding.root.getColor(color))
     }
 
+    @Suppress("LongMethod")
     private fun setupControlButtons(warning: WarningMessage) = when (warning.type) {
         WarningMessage.Type.Permanent, WarningMessage.Type.TestCard -> {
             binding.groupControlsTemporary.hide()

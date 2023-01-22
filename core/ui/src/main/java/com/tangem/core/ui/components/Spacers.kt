@@ -1,4 +1,4 @@
-@file:Suppress("unused")
+@file:Suppress("TooManyFunctions")
 
 package com.tangem.core.ui.components
 
@@ -88,6 +88,7 @@ fun ColumnScope.SpacerHMax(modifier: Modifier = Modifier) {
 }
 
 // TODO: Refactor with context receivers
+@Suppress("MagicNumber")
 @Composable
 fun ColumnScope.SpacerHHalf(modifier: Modifier = Modifier) {
     Spacer(modifier = modifier.weight(.5f))
@@ -98,6 +99,11 @@ fun ColumnScope.SpacerHHalf(modifier: Modifier = Modifier) {
 @Composable
 fun SpacerW(width: Dp, modifier: Modifier = Modifier) {
     Spacer(modifier = modifier.width(width))
+}
+
+@Composable
+fun SpacerW2(modifier: Modifier = Modifier) {
+    SpacerW(2.dp, modifier)
 }
 
 @Composable

@@ -12,14 +12,13 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import com.google.accompanist.appcompattheme.AppCompatTheme
-import com.tangem.tap.common.analytics.Analytics
+import com.tangem.core.analytics.Analytics
 import com.tangem.tap.common.analytics.events.IntroductionProcess
 import com.tangem.tap.common.redux.navigation.AppScreen
 import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.features.home.compose.StoriesScreen
 import com.tangem.tap.features.home.redux.HomeAction
 import com.tangem.tap.features.home.redux.HomeState
-import com.tangem.tap.features.onboarding.products.wallet.redux.BackupAction
 import com.tangem.tap.features.tokens.redux.TokensAction
 import com.tangem.tap.store
 import org.rekotlin.StoreSubscriber
@@ -39,8 +38,6 @@ class HomeFragment : Fragment(), StoreSubscriber<HomeState> {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
-        store.dispatch(BackupAction.CheckForUnfinishedBackup)
-
         return ComposeView(inflater.context).apply {
             setContent {
                 BackHandler {
@@ -79,6 +76,7 @@ class HomeFragment : Fragment(), StoreSubscriber<HomeState> {
         homeState.value = state
     }
 
+    @Suppress("TopLevelComposableFunctions")
     @Composable
     private fun ScreenContent() {
         StoriesScreen(
@@ -101,9 +99,9 @@ class HomeFragment : Fragment(), StoreSubscriber<HomeState> {
     }
 
     /*
-    * !!! Workaround !!!
-    * Used to roll back the color of icons in the system bars after the stories screen
-    * */
+     * !!! Workaround !!!
+     * Used to roll back the color of icons in the system bars after the stories screen
+     */
     private fun rollbackStatusBarIconsColor() {
         val windowInsetsController = WindowInsetsControllerCompat(
             activity?.window ?: return,

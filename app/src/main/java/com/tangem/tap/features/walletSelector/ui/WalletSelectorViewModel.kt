@@ -2,6 +2,7 @@ package com.tangem.tap.features.walletSelector.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tangem.domain.common.util.UserWalletId
 import com.tangem.tap.common.extensions.dispatchOnMain
 import com.tangem.tap.features.walletSelector.redux.WalletSelectorAction
 import com.tangem.tap.features.walletSelector.redux.WalletSelectorState
@@ -35,52 +36,49 @@ internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSele
         store.dispatch(WalletSelectorAction.AddWallet)
     }
 
-    fun walletClicked(walletId: String) = with(state.value) {
+    fun walletClicked(userWalletId: UserWalletId) = with(state.value) {
         when {
-            isLocked -> {
-                store.dispatch(WalletSelectorAction.UnlockWalletWithCard(walletId))
+            editingUserWalletsIds.isNotEmpty() && !editingUserWalletsIds.contains(userWalletId) -> {
+                editWallet(userWalletId)
             }
-            editingWalletsIds.isNotEmpty() && !editingWalletsIds.contains(walletId) -> {
-                editWallet(walletId)
+            editingUserWalletsIds.isNotEmpty() && editingUserWalletsIds.contains(userWalletId) -> {
+                cancelWalletEditing(userWalletId)
             }
-            editingWalletsIds.isNotEmpty() && editingWalletsIds.contains(walletId) -> {
-                cancelWalletEditing(walletId)
-            }
-            selectedWalletId != walletId -> {
-                store.dispatch(WalletSelectorAction.SelectWallet(walletId))
+            selectedUserWalletId != userWalletId -> {
+                store.dispatch(WalletSelectorAction.SelectWallet(userWalletId))
             }
         }
     }
 
-    fun walletLongClicked(walletId: String) = with(state.value) {
-        if (!isLocked && editingWalletsIds.isEmpty()) {
-            editWallet(walletId)
+    fun walletLongClicked(userWalletId: UserWalletId) = with(state.value) {
+        if (editingUserWalletsIds.isEmpty()) {
+            editWallet(userWalletId)
         }
     }
 
     fun cancelWalletsEditing() {
         stateInternal.update { prevState ->
             prevState.copy(
-                editingWalletsIds = emptyList(),
+                editingUserWalletsIds = emptyList(),
             )
         }
     }
 
     fun renameWallet() = with(state.value) {
-        if (editingWalletsIds.isNotEmpty() && renameWalletDialog == null) {
-            val editedWalletId = editingWalletsIds.first()
-            val editedWallet = (multiCurrencyWallets + singleCurrencyWallets)
-                .find { it.id == editedWalletId }
+        if (editingUserWalletsIds.isNotEmpty() && renameWalletDialog == null) {
+            val editedUserWalletId = editingUserWalletsIds.first()
+            val editedUserWallet = (multiCurrencyWallets + singleCurrencyWallets)
+                .find { it.id == editedUserWalletId }
 
-            if (editedWallet != null) {
+            if (editedUserWallet != null) {
                 val dialog = RenameWalletDialog(
-                    currentName = editedWallet.name,
+                    currentName = editedUserWallet.name,
                     onApply = { newName ->
-                        store.dispatch(WalletSelectorAction.RenameWallet(editedWalletId, newName))
+                        store.dispatch(WalletSelectorAction.RenameWallet(editedUserWalletId, newName))
                         stateInternal.update { prevState ->
                             prevState.copy(
                                 renameWalletDialog = null,
-                                editingWalletsIds = emptyList(),
+                                editingUserWalletsIds = emptyList(),
                             )
                         }
                     },
@@ -103,8 +101,8 @@ internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSele
     }
 
     fun deleteWallets() = with(state.value) {
-        if (editingWalletsIds.isNotEmpty()) {
-            store.dispatch(WalletSelectorAction.RemoveWallets(walletIdsToRemove = editingWalletsIds))
+        if (editingUserWalletsIds.isNotEmpty()) {
+            store.dispatch(WalletSelectorAction.RemoveWallets(userWalletsIds = editingUserWalletsIds))
         }
     }
 
@@ -122,18 +120,18 @@ internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSele
         store.unsubscribe(this)
     }
 
-    private fun editWallet(walletId: String) {
+    private fun editWallet(userWalletId: UserWalletId) {
         stateInternal.update { prevState ->
             prevState.copy(
-                editingWalletsIds = prevState.editingWalletsIds + walletId,
+                editingUserWalletsIds = prevState.editingUserWalletsIds + userWalletId,
             )
         }
     }
 
-    private fun cancelWalletEditing(walletId: String) {
+    private fun cancelWalletEditing(userWalletId: UserWalletId) {
         stateInternal.update { prevState ->
             prevState.copy(
-                editingWalletsIds = prevState.editingWalletsIds - walletId,
+                editingUserWalletsIds = prevState.editingUserWalletsIds - userWalletId,
             )
         }
     }

@@ -6,12 +6,12 @@ import com.tangem.common.core.TangemSdkError
 import com.tangem.common.doOnFailure
 import com.tangem.common.doOnSuccess
 import com.tangem.common.services.Result
+import com.tangem.core.analytics.Analytics
 import com.tangem.domain.common.ScanResponse
 import com.tangem.domain.common.extensions.withMainContext
 import com.tangem.operations.backup.BackupService
 import com.tangem.tap.DELAY_SDK_DIALOG_CLOSE
 import com.tangem.tap.backupService
-import com.tangem.tap.common.analytics.Analytics
 import com.tangem.tap.common.analytics.events.IntroductionProcess
 import com.tangem.tap.common.analytics.paramsInterceptor.BatchIdParamsInterceptor
 import com.tangem.tap.common.extensions.dispatchDialogShow
@@ -21,9 +21,10 @@ import com.tangem.tap.common.redux.AppDialog
 import com.tangem.tap.common.redux.global.GlobalAction
 import com.tangem.tap.common.redux.navigation.AppScreen
 import com.tangem.tap.common.redux.navigation.NavigationAction
+import com.tangem.tap.features.disclaimer.DisclaimerType
+import com.tangem.tap.features.disclaimer.createDisclaimer
 import com.tangem.tap.features.disclaimer.redux.DisclaimerAction
-import com.tangem.tap.features.disclaimer.redux.DisclaimerType
-import com.tangem.tap.features.disclaimer.redux.isAccepted
+import com.tangem.tap.features.disclaimer.redux.DisclaimerCallback
 import com.tangem.tap.features.onboarding.OnboardingHelper
 import com.tangem.tap.features.onboarding.OnboardingSaltPayHelper
 import com.tangem.tap.features.onboarding.products.twins.redux.TwinCardsAction
@@ -48,7 +49,8 @@ object ScanCardProcessor {
         cardId: String? = null,
         onProgressStateChange: suspend (showProgress: Boolean) -> Unit = {},
         onScanStateChange: suspend (scanInProgress: Boolean) -> Unit = {},
-        onWalletNotCreated: suspend (() -> Unit) = {},
+        onWalletNotCreated: suspend () -> Unit = {},
+        disclaimerWillShow: () -> Unit = {},
         onFailure: suspend (error: TangemError) -> Unit = {},
         onSuccess: suspend (scanResponse: ScanResponse) -> Unit = {},
     ) = withMainContext {
@@ -82,6 +84,9 @@ object ScanCardProcessor {
                     nextHandler = { scanResponse1 ->
                         showDisclaimerIfNeed(
                             scanResponse = scanResponse1,
+                            onProgressStateChange = onProgressStateChange,
+                            disclaimerWillShow = disclaimerWillShow,
+                            onFailure = onFailure,
                             nextHandler = { scanResponse2 ->
                                 onScanSuccess(
                                     scanResponse = scanResponse2,
@@ -117,7 +122,7 @@ object ScanCardProcessor {
             ?.let { it == scanResponse.card.cardId }
             ?: false
 
-        if (scanResponse.isSaltPayWallet() || !isTheSamePrimaryCard) {
+        if (scanResponse.cardTypesResolver.isSaltPayWallet() || !isTheSamePrimaryCard) {
             onProgressStateChange(false)
             showSaltPayTapVisaLogoCardDialog()
         } else {
@@ -127,25 +132,43 @@ object ScanCardProcessor {
 
     private suspend inline fun showDisclaimerIfNeed(
         scanResponse: ScanResponse,
+        crossinline disclaimerWillShow: () -> Unit = {},
+        crossinline onProgressStateChange: suspend (showProgress: Boolean) -> Unit,
         crossinline nextHandler: suspend (ScanResponse) -> Unit,
+        crossinline onFailure: suspend (error: TangemError) -> Unit,
     ) {
-        val disclaimerType = DisclaimerType.get(scanResponse)
-        store.dispatchOnMain(DisclaimerAction.SetDisclaimerType(disclaimerType))
+        val disclaimer = DisclaimerType.get(scanResponse.card).createDisclaimer(scanResponse.card)
+        store.dispatchOnMain(DisclaimerAction.SetDisclaimer(disclaimer))
 
-        if (disclaimerType.isAccepted()) {
-            nextHandler((scanResponse))
-        } else scope.launch(Dispatchers.Main) {
-            delay(DELAY_SDK_DIALOG_CLOSE)
-            store.dispatchOnMain(
-                DisclaimerAction.Show {
-                    scope.launch(Dispatchers.Main) {
-                        nextHandler(scanResponse)
-                    }
-                },
-            )
+        if (disclaimer.isAccepted()) {
+            nextHandler(scanResponse)
+        } else {
+            scope.launch {
+                delay(DELAY_SDK_DIALOG_CLOSE)
+                disclaimerWillShow()
+                dispatchOnMain(
+                    DisclaimerAction.Show(
+                        fromScreen = AppScreen.Home,
+                        callback = DisclaimerCallback(
+                            onAccept = {
+                                scope.launch(Dispatchers.Main) {
+                                    nextHandler(scanResponse)
+                                }
+                            },
+                            onDismiss = {
+                                scope.launch(Dispatchers.Main) {
+                                    onProgressStateChange(false)
+                                    onFailure(TangemSdkError.UserCancelled())
+                                }
+                            },
+                        ),
+                    ),
+                )
+            }
         }
     }
 
+    @Suppress("LongMethod", "MagicNumber")
     private suspend inline fun onScanSuccess(
         scanResponse: ScanResponse,
         crossinline onProgressStateChange: suspend (showProgress: Boolean) -> Unit,
@@ -163,8 +186,8 @@ object ScanCardProcessor {
 
         store.dispatchOnMain(TwinCardsAction.IfTwinsPrepareState(scanResponse))
 
-        if (scanResponse.isSaltPay()) {
-            if (scanResponse.isSaltPayVisa()) {
+        if (scanResponse.cardTypesResolver.isSaltPay()) {
+            if (scanResponse.cardTypesResolver.isSaltPayVisa()) {
                 val (manager, config) = OnboardingSaltPayState.initDependency(scanResponse)
                 val result = OnboardingSaltPayHelper.isOnboardingCase(scanResponse, manager)
                 delay(500)

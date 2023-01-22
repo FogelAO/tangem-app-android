@@ -3,33 +3,37 @@ package com.tangem.tap.proxy
 import com.tangem.blockchain.common.Blockchain
 import com.tangem.blockchain.common.DerivationParams
 import com.tangem.blockchain.common.DerivationStyle
+import com.tangem.blockchain.common.WalletManager
 import com.tangem.blockchain.common.WalletManagerFactory
 import com.tangem.domain.common.CardDTO
 import com.tangem.domain.common.TapWorkarounds.derivationStyle
 import com.tangem.domain.common.extensions.fromNetworkId
 import com.tangem.domain.common.extensions.toNetworkId
-import com.tangem.domain.common.util.userWalletId
 import com.tangem.lib.crypto.UserWalletManager
 import com.tangem.lib.crypto.models.Currency
-import com.tangem.lib.crypto.models.NativeToken
-import com.tangem.lib.crypto.models.NonNativeToken
+import com.tangem.lib.crypto.models.Currency.NativeToken
+import com.tangem.lib.crypto.models.Currency.NonNativeToken
+import com.tangem.lib.crypto.models.ProxyAmount
+import com.tangem.lib.crypto.models.ProxyFiatCurrency
 import com.tangem.tap.domain.extensions.makeWalletManagerForApp
+import com.tangem.tap.domain.model.builders.UserWalletIdBuilder
 import com.tangem.tap.domain.tokens.models.BlockchainNetwork
 import com.tangem.tap.features.wallet.redux.WalletAction
 import org.rekotlin.Action
+import java.math.BigDecimal
 
 class UserWalletManagerImpl(
     private val appStateHolder: AppStateHolder,
     private val walletManagerFactory: WalletManagerFactory,
 ) : UserWalletManager {
 
-    override suspend fun getUserTokens(): List<Currency> {
+    override suspend fun getUserTokens(networkId: String): List<Currency> {
         val card = appStateHolder.getActualCard()
         val userTokensRepository =
             requireNotNull(appStateHolder.userTokensRepository) { "userTokensRepository is null" }
-        if (card != null) {
+        return if (card != null) {
             userTokensRepository.getUserTokens(card)
-                .filter { it.isToken() }
+                .filter { it.blockchain.toNetworkId() == networkId }
                 .map {
                     if (it is com.tangem.tap.features.wallet.models.Currency.Token) {
                         NonNativeToken(
@@ -49,12 +53,18 @@ class UserWalletManagerImpl(
                         )
                     }
                 }
+        } else {
+            emptyList()
         }
-        return emptyList()
     }
 
     override fun getWalletId(): String {
-        return appStateHolder.getActualCard()?.userWalletId?.stringValue ?: ""
+        return appStateHolder.getActualCard()?.let {
+            UserWalletIdBuilder.card(it)
+                .build()
+                ?.stringValue
+        }
+            ?: ""
     }
 
     override suspend fun isTokenAdded(currency: Currency): Boolean {
@@ -63,20 +73,16 @@ class UserWalletManagerImpl(
             requireNotNull(appStateHolder.userTokensRepository) { "userTokensRepository is null" }
         if (card != null) {
             return userTokensRepository.getUserTokens(card)
-                .any { it.coinId.equals(currency.id) } //todo ensure that its the same ids
+                .any { it.coinId.equals(currency.id) } // todo ensure that its the same ids
         }
         return false
     }
 
-    //todo check is it sync operation
+    // todo check is it sync operation
     override fun addToken(currency: Currency) {
         val action = if (currency is NativeToken) {
             val card = appStateHolder.getActualCard()
-            if (card != null) {
-                addNativeTokenToWalletAction(currency, card)
-            } else {
-                throw  IllegalStateException("card not found")
-            }
+            if (card != null) addNativeTokenToWalletAction(currency, card) else error("Card not found")
         } else {
             addNonNativeTokenToWalletAction(currency as NonNativeToken)
         }
@@ -98,6 +104,33 @@ class UserWalletManagerImpl(
         } else {
             error("no blockchain or card found")
         }
+    }
+
+    override fun getCurrentWalletTokensBalance(networkId: String): Map<String, ProxyAmount> {
+        val blockchain = requireNotNull(Blockchain.fromNetworkId(networkId)) { "blockchain not found" }
+        val walletManager = getActualWalletManager(blockchain)
+        return walletManager.wallet.amounts.map { entry ->
+            val amount = entry.value
+            amount.currencySymbol to ProxyAmount(
+                amount.currencySymbol,
+                amount.value ?: BigDecimal.ZERO,
+                amount.decimals,
+            )
+        }.toMap()
+    }
+
+    override fun getUserAppCurrency(): ProxyFiatCurrency {
+        val appCurrency = appStateHolder.appFiatCurrency
+        return ProxyFiatCurrency(
+            code = appCurrency.code,
+            name = appCurrency.name,
+            symbol = appCurrency.symbol,
+        )
+    }
+
+    override fun getCurrencyByNetworkId(networkId: String): String {
+        val blockchain = requireNotNull(Blockchain.fromNetworkId(networkId)) { "blockchain not found" }
+        return blockchain.currency
     }
 
     private fun addNativeTokenToWalletAction(token: NativeToken, card: CardDTO): Action {
@@ -147,6 +180,15 @@ class UserWalletManagerImpl(
     }
 
     private fun createDerivationParams(derivationStyle: DerivationStyle?): DerivationParams? {
-        return derivationStyle?.let { DerivationParams.Default(derivationStyle) } //todo clarify if its need to add Custom
+        // todo clarify if its need to add Custom
+        return derivationStyle?.let { DerivationParams.Default(derivationStyle) }
+    }
+
+    private fun getActualWalletManager(blockchain: Blockchain): WalletManager {
+        val card = requireNotNull(appStateHolder.getActualCard()) { "card not found" }
+        val blockchainNetwork = BlockchainNetwork(blockchain, card)
+        return requireNotNull(appStateHolder.walletState?.getWalletManager(blockchainNetwork)) {
+            "No wallet manager found"
+        }
     }
 }

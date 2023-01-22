@@ -30,15 +30,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tangem.wallet.R
 
+@Suppress("MagicNumber")
 @Composable
 fun TangemSwitch(
-    modifier: Modifier = Modifier,
+    onCheckedChange: (Boolean) -> Unit,
     checkedColor: Color = colorResource(id = R.color.control_checked),
     uncheckedColor: Color = colorResource(id = R.color.icon_informative),
     size: Dp = 48.dp,
     checked: Boolean = false,
     enabled: Boolean = true,
-    onCheckedChange: (Boolean) -> Unit,
 ) {
     val transition = updateTransition(checked, label = "SwitchState")
     val color by transition.animateColor(
@@ -52,7 +52,7 @@ fun TangemSwitch(
     val interactionSource = remember { MutableInteractionSource() }
 
     Box(
-        modifier = modifier
+        modifier = Modifier
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -69,7 +69,7 @@ fun TangemSwitch(
             ),
     ) {
         BoxWithConstraints(
-            modifier = modifier
+            modifier = Modifier
                 .width(size)
                 .height(size / 2)
                 .indication(interactionSource, null)

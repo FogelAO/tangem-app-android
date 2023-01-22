@@ -1,12 +1,12 @@
 package com.tangem.core.ui.components
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.Card
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.Icon
-import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -25,16 +25,16 @@ import com.tangem.core.ui.res.TangemTheme
  */
 @Composable
 fun WarningCard(
-    modifier: Modifier = Modifier,
     title: String,
     description: String,
+    icon: @Composable (() -> Unit)? = null,
 ) {
     WarningCardSurface(
-        modifier = modifier,
         content = {
             WarningBody(
                 title = title,
                 description = description,
+                icon = icon,
             )
         },
     )
@@ -52,15 +52,14 @@ fun WarningCard(
  */
 @Composable
 fun ClickableWarningCard(
-    modifier: Modifier = Modifier,
     title: String,
     description: String,
+    icon: @Composable (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     WarningCardSurface(
-        modifier = modifier,
         content = {
-            WarningBody(title = title, description = description) {
+            WarningBody(title = title, description = description, icon = icon) {
                 SpacerW12()
                 Icon(
                     painter = painterResource(id = R.drawable.ic_chevron_right_24),
@@ -85,15 +84,14 @@ fun ClickableWarningCard(
  */
 @Composable
 fun RefreshableWaringCard(
-    modifier: Modifier = Modifier,
     title: String,
     description: String,
+    icon: @Composable (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     WarningCardSurface(
-        modifier = modifier,
         content = {
-            WarningBody(title = title, description = description) {
+            WarningBody(title = title, description = description, icon = icon) {
                 SpacerW12()
                 Icon(
                     painter = painterResource(id = R.drawable.ic_refresh_24),
@@ -110,17 +108,16 @@ fun RefreshableWaringCard(
 
 @Composable
 private fun WarningBody(
-    modifier: Modifier = Modifier,
     title: String,
     description: String,
+    icon: @Composable (() -> Unit)? = null,
     additionalContent: @Composable () -> Unit = {},
 ) {
     IconWithTitleAndDescription(
-        modifier = modifier,
         title = title,
         description = description,
         additionalContent = additionalContent,
-        icon = {
+        icon = icon ?: {
             Image(
                 painter = painterResource(id = R.drawable.img_attention_20),
                 contentDescription = null,
@@ -129,20 +126,18 @@ private fun WarningBody(
     )
 }
 
+@OptIn(ExperimentalMaterialApi::class)
 @Composable
 private fun WarningCardSurface(
-    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    Surface(
+    Card(
         shape = RoundedCornerShape(TangemTheme.dimens.size12),
-        color = TangemTheme.colors.background.primary,
+        backgroundColor = TangemTheme.colors.background.primary,
         elevation = TangemTheme.dimens.elevation2,
-        modifier = modifier.clickable(
-            enabled = onClick != null,
-            onClick = onClick ?: {},
-        ),
+        onClick = { onClick ?: Unit },
+        enabled = onClick != null,
     ) {
         content()
     }
@@ -153,7 +148,7 @@ private fun WarningCardSurface(
 // region Preview
 
 @Composable
-fun WarningsPreview() {
+private fun WarningsPreview() {
     Column(modifier = Modifier.fillMaxWidth()) {
         WarningCard(
             title = "Exchange rate has expired",
@@ -176,7 +171,7 @@ fun WarningsPreview() {
 
 @Preview(showBackground = true)
 @Composable
-fun Preview_Warning_InLightTheme() {
+private fun Preview_Warning_InLightTheme() {
     TangemTheme(isDark = false) {
         WarningsPreview()
     }
@@ -184,7 +179,7 @@ fun Preview_Warning_InLightTheme() {
 
 @Preview(showBackground = true)
 @Composable
-fun Preview_Warning_InDarkTheme() {
+private fun Preview_Warning_InDarkTheme() {
     TangemTheme(isDark = true) {
         WarningsPreview()
     }

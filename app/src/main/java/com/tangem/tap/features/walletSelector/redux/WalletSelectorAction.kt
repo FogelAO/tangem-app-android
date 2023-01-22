@@ -34,20 +34,16 @@ internal sealed interface WalletSelectorAction : Action {
     }
 
     data class SelectWallet(
-        val walletId: String,
-    ) : WalletSelectorAction
-
-    data class UnlockWalletWithCard(
-        val walletId: String,
+        val userWalletId: UserWalletId,
     ) : WalletSelectorAction
 
     data class RenameWallet(
-        val walletId: String,
+        val userWalletId: UserWalletId,
         val newName: String,
     ) : WalletSelectorAction
 
     data class RemoveWallets(
-        val walletIdsToRemove: List<String>,
+        val userWalletsIds: List<UserWalletId>,
     ) : WalletSelectorAction
 
     object AddWallet : WalletSelectorAction {
@@ -58,8 +54,6 @@ internal sealed interface WalletSelectorAction : Action {
     data class ChangeAppCurrency(
         val fiatCurrency: FiatCurrency,
     ) : WalletSelectorAction
-
-    data class HandleError(val error: TangemError) : WalletSelectorAction
 
     object CloseError : WalletSelectorAction
 }

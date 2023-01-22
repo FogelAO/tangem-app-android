@@ -5,9 +5,8 @@ import com.tangem.common.core.TangemSdkError
 import com.tangem.common.doOnFailure
 import com.tangem.common.doOnSuccess
 import com.tangem.common.flatMap
+import com.tangem.core.analytics.Analytics
 import com.tangem.domain.common.TapWorkarounds.isTangemTwins
-import com.tangem.domain.common.util.userWalletId
-import com.tangem.tap.common.analytics.Analytics
 import com.tangem.tap.common.analytics.events.AnalyticsParam
 import com.tangem.tap.common.analytics.events.Settings
 import com.tangem.tap.common.extensions.dispatchDialogShow
@@ -19,6 +18,7 @@ import com.tangem.tap.common.redux.global.GlobalAction
 import com.tangem.tap.common.redux.navigation.AppScreen
 import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.domain.model.builders.UserWalletBuilder
+import com.tangem.tap.domain.model.builders.UserWalletIdBuilder
 import com.tangem.tap.features.demo.DemoHelper
 import com.tangem.tap.features.onboarding.products.twins.redux.CreateTwinWalletMode
 import com.tangem.tap.features.onboarding.products.twins.redux.TwinCardsAction
@@ -26,6 +26,7 @@ import com.tangem.tap.preferencesStorage
 import com.tangem.tap.scope
 import com.tangem.tap.store
 import com.tangem.tap.tangemSdkManager
+import com.tangem.tap.userTokensRepository
 import com.tangem.tap.userWalletsListManager
 import com.tangem.tap.walletStoresManager
 import com.tangem.wallet.R
@@ -60,31 +61,33 @@ class DetailsMiddleware {
             is DetailsAction.ResetToFactory -> eraseWalletMiddleware.handle(action)
             is DetailsAction.ManageSecurity -> manageSecurityMiddleware.handle(action)
             is DetailsAction.AppSettings -> managePrivacyMiddleware.handle(state, action)
-            is DetailsAction.ShowDisclaimer -> {
-                val uri = store.state.detailsState.cardTermsOfUseUrl
-                if (uri != null) {
-                    store.dispatch(NavigationAction.OpenDocument(uri))
-                }
-            }
             is DetailsAction.ReCreateTwinsWallet -> {
                 store.dispatch(TwinCardsAction.SetMode(CreateTwinWalletMode.RecreateWallet))
                 store.dispatch(NavigationAction.NavigateTo(AppScreen.OnboardingTwins))
             }
             is DetailsAction.CreateBackup -> {
-                store.state.detailsState.scanResponse?.let {
+                state.scanResponse?.let {
                     store.dispatch(GlobalAction.Onboarding.Start(it, canSkipBackup = false))
                     store.dispatch(NavigationAction.NavigateTo(AppScreen.OnboardingWallet))
                 }
             }
             DetailsAction.ScanCard -> {
                 scope.launch {
-                    tangemSdkManager.scanCard(cardId = state.scanResponse?.card?.cardId)
-                        .doOnSuccess { card ->
-                            val currentCardId = store.state.globalState.scanResponse?.card
-                                ?.userWalletId
-                                ?.stringValue
-                            if (card.userWalletId.stringValue == currentCardId) {
-                                store.dispatchOnMain(DetailsAction.PrepareCardSettingsData(card))
+                    tangemSdkManager.scanProduct(userTokensRepository)
+                        .doOnSuccess { scanResponse ->
+                            val currentUserWalletId = state.scanResponse
+                                ?.let { UserWalletIdBuilder.scanResponse(it).build() }
+                            val scannedUserWalletId = UserWalletIdBuilder.scanResponse(scanResponse)
+                                .build()
+                            val isSameWallet = currentUserWalletId == scannedUserWalletId
+
+                            if (isSameWallet) {
+                                store.dispatchOnMain(
+                                    DetailsAction.PrepareCardSettingsData(
+                                        scanResponse.card,
+                                        scanResponse.cardTypesResolver,
+                                    ),
+                                )
                             } else {
                                 store.dispatchDialogShow(
                                     AppDialog.SimpleOkDialogRes(
@@ -114,8 +117,11 @@ class DetailsMiddleware {
                 is DetailsAction.ResetToFactory.Proceed -> {
                     val card = store.state.detailsState.cardSettingsState?.card ?: return
                     scope.launch {
+                        val userWalletId = UserWalletIdBuilder.card(card).build()
+
                         tangemSdkManager.resetToFactorySettings(card.cardId)
-                            .flatMap { userWalletsListManager.delete(listOf(card.userWalletId)) }
+                            .flatMap { userWalletsListManager.delete(listOfNotNull(userWalletId)) }
+                            .flatMap { tangemSdkManager.deleteSavedUserCodes(setOf(card.cardId)) }
                             .doOnSuccess {
                                 Analytics.send(Settings.CardSettings.FactoryResetFinished())
 
@@ -145,6 +151,7 @@ class DetailsMiddleware {
     }
 
     class ManageSecurityMiddleware {
+        @Suppress("ComplexMethod")
         fun handle(action: DetailsAction.ManageSecurity) {
             when (action) {
                 is DetailsAction.ManageSecurity.OpenSecurity -> {
@@ -255,10 +262,10 @@ class DetailsMiddleware {
         private fun toggleSaveAccessCodes(state: DetailsState, enable: Boolean) = scope.launch {
             if (state.saveAccessCodes == enable) return@launch
             if (enable) {
+                saveAccessCodes(state)
                 if (!state.saveWallets) {
                     saveCurrentWallet(state)
                 }
-                saveAccessCodes(state)
             } else {
                 deleteSavedAccessCodes()
             }
@@ -266,12 +273,9 @@ class DetailsMiddleware {
 
         private suspend fun saveCurrentWallet(state: DetailsState) {
             val scanResponse = state.scanResponse ?: return
-            val userWallet = UserWalletBuilder(scanResponse).build()
+            val userWallet = UserWalletBuilder(scanResponse).build() ?: return
 
             userWalletsListManager.save(userWallet)
-                .doOnFailure { error ->
-                    Timber.e(error, "Wallet saving failed")
-                }
                 .doOnSuccess {
                     Analytics.send(Settings.AppSettings.SaveWalletSwitcherChanged(AnalyticsParam.OnOffState.On))
 
@@ -286,6 +290,9 @@ class DetailsMiddleware {
                     )
 
                     store.onUserWalletSelected(userWallet)
+                }
+                .doOnFailure { error ->
+                    Timber.e(error, "Unable to save user wallet")
                 }
         }
 
@@ -305,6 +312,9 @@ class DetailsMiddleware {
                     )
 
                     store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Home))
+                }
+                .doOnFailure { error ->
+                    Timber.e(error, "Unable to delete saved wallets")
                 }
         }
 
@@ -334,12 +344,18 @@ class DetailsMiddleware {
                         useBiometricsForAccessCode = false,
                     )
 
-                    store.dispatchOnMain(
-                        DetailsAction.AppSettings.SwitchPrivacySetting.Success(
-                            setting = PrivacySetting.SaveAccessCode,
-                            enable = false,
-                        ),
-                    )
+                    tangemSdkManager.clearSavedUserCodes()
+                        .doOnSuccess {
+                            store.dispatchOnMain(
+                                DetailsAction.AppSettings.SwitchPrivacySetting.Success(
+                                    setting = PrivacySetting.SaveAccessCode,
+                                    enable = false,
+                                ),
+                            )
+                        }
+                }
+                .doOnFailure { error ->
+                    Timber.e(error, "Unable to delete saved access codes")
                 }
         }
     }

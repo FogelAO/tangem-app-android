@@ -1,13 +1,14 @@
 package com.tangem.tap.features.walletSelector.redux
 
 import com.tangem.common.CompletionResult
+import com.tangem.common.core.TangemSdkError
 import com.tangem.common.doOnFailure
 import com.tangem.common.doOnSuccess
 import com.tangem.common.flatMap
 import com.tangem.common.map
+import com.tangem.core.analytics.Analytics
 import com.tangem.domain.common.ScanResponse
 import com.tangem.domain.common.util.UserWalletId
-import com.tangem.tap.common.analytics.Analytics
 import com.tangem.tap.common.analytics.events.MyWallets
 import com.tangem.tap.common.extensions.dispatchOnMain
 import com.tangem.tap.common.extensions.onUserWalletSelected
@@ -26,6 +27,9 @@ import com.tangem.tap.tangemSdkManager
 import com.tangem.tap.totalFiatBalanceCalculator
 import com.tangem.tap.userWalletsListManager
 import com.tangem.tap.walletStoresManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import org.rekotlin.Middleware
 import timber.log.Timber
@@ -59,18 +63,17 @@ internal class WalletSelectorMiddleware {
                 addWallet()
             }
             is WalletSelectorAction.SelectWallet -> {
-                selectWallet(action.walletId)
-            }
-            is WalletSelectorAction.UnlockWalletWithCard -> {
-                unlockWalletWithCard(action.walletId)
+                selectWallet(action.userWalletId)
             }
             is WalletSelectorAction.RemoveWallets -> {
-                removeWallets(action.walletIdsToRemove, state)
+                deleteWallets(action.userWalletsIds, state)
             }
             is WalletSelectorAction.RenameWallet -> {
-                renameWallet(action.walletId, action.newName)
+                renameWallet(action.userWalletId, action.newName)
             }
-            is WalletSelectorAction.ChangeAppCurrency,
+            is WalletSelectorAction.ChangeAppCurrency -> {
+                refreshUserWalletsAmounts()
+            }
             is WalletSelectorAction.AddWallet.Success,
             is WalletSelectorAction.AddWallet.Error,
             is WalletSelectorAction.SelectedWalletChanged,
@@ -78,7 +81,6 @@ internal class WalletSelectorMiddleware {
             is WalletSelectorAction.UnlockWithBiometry.Success,
             is WalletSelectorAction.BalanceLoaded,
             is WalletSelectorAction.IsLockedChanged,
-            is WalletSelectorAction.HandleError,
             is WalletSelectorAction.CloseError,
             -> Unit
         }
@@ -89,21 +91,30 @@ internal class WalletSelectorMiddleware {
             walletStoresManager.fetch(userWallets)
                 .doOnFailure { error ->
                     Timber.e(error, "Unable to fetch wallet stores")
-                    store.dispatchOnMain(WalletSelectorAction.HandleError(error))
                 }
         }
     }
 
-    private fun updateBalances(walletStores: Map<UserWalletId, List<WalletStoreModel>>, state: WalletSelectorState) {
-        walletStores.forEach { (walletId, walletStores) ->
-            scope.launch {
-                val updatedWallet = state.wallets
-                    .find { it.id == walletId.stringValue }
-                    ?.updateWalletStoresAndCalculateFiatBalance(walletStores)
+    private fun updateBalances(
+        updatedWalletStores: Map<UserWalletId, List<WalletStoreModel>>,
+        state: WalletSelectorState,
+    ) {
+        if (updatedWalletStores.isNotEmpty()) {
+            scope.launch(Dispatchers.Default) {
+                state.wallets
+                    .associateWith { updatedWalletStores[it.id] }
+                    .forEach { (wallet, walletStores) ->
+                        val isWalletTokensEmpty = (wallet.type as? UserWalletModel.Type.MultiCurrency)?.tokensCount == 0
+                        val updatedWallet = if (walletStores == null && isWalletTokensEmpty) {
+                            wallet.copy(fiatBalance = TotalFiatBalance.Loaded(BigDecimal.ZERO))
+                        } else {
+                            wallet.updateWalletStoresAndCalculateFiatBalance(walletStores.orEmpty())
+                        }
 
-                if (updatedWallet != null) {
-                    store.dispatchOnMain(WalletSelectorAction.BalanceLoaded(updatedWallet))
-                }
+                        if (wallet != updatedWallet) {
+                            store.dispatchOnMain(WalletSelectorAction.BalanceLoaded(updatedWallet))
+                        }
+                    }
             }
         }
     }
@@ -114,6 +125,7 @@ internal class WalletSelectorMiddleware {
         scope.launch {
             userWalletsListManager.unlockWithBiometry()
                 .doOnFailure { error ->
+                    Timber.e(error, "Unable to unlock all user wallets")
                     store.dispatchOnMain(WalletSelectorAction.UnlockWithBiometry.Error(error))
                 }
                 .doOnSuccess {
@@ -125,55 +137,85 @@ internal class WalletSelectorMiddleware {
     private fun addWallet() = scope.launch {
         Analytics.send(MyWallets.Button.ScanNewCard)
 
-        scanCardInternal { scanResponse ->
-            val userWallet = UserWalletBuilder(scanResponse).build()
+        val prevUseBiometricsForAccessCode = tangemSdkManager.useBiometricsForAccessCode()
 
-            userWalletsListManager.save(userWallet)
+        // Update access code policy for access code saving when a card was scanned
+        tangemSdkManager.setAccessCodeRequestPolicy(
+            useBiometricsForAccessCode = preferencesStorage.shouldSaveAccessCodes,
+        )
+
+        ScanCardProcessor.scan(
+            onWalletNotCreated = {
+                // No need to rollback policy, continue with the policy set before the card scan
+                store.dispatchOnMain(WalletSelectorAction.AddWallet.Success)
+                store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
+            },
+            disclaimerWillShow = {
+                store.dispatchOnMain(NavigationAction.PopBackTo())
+            },
+            onSuccess = { scanResponse ->
+                saveUserWalletAndPopBackToWalletScreen(scanResponse)
+                    .doOnFailure { error ->
+                        // Rollback policy if card saving was failed
+                        tangemSdkManager.setAccessCodeRequestPolicy(prevUseBiometricsForAccessCode)
+                        Timber.e(error, "Unable to save user wallet")
+                        store.dispatchOnMain(WalletSelectorAction.AddWallet.Error(error))
+                    }
+            },
+            onFailure = { error ->
+                // Rollback policy if card scanning was failed
+                tangemSdkManager.setAccessCodeRequestPolicy(prevUseBiometricsForAccessCode)
+                Timber.e(error, "Unable to scan card")
+                store.dispatchOnMain(WalletSelectorAction.AddWallet.Error(error))
+            },
+        )
+    }
+
+    private suspend fun saveUserWalletAndPopBackToWalletScreen(scanResponse: ScanResponse): CompletionResult<Unit> {
+        val userWallet = UserWalletBuilder(scanResponse).build()
+            ?: return CompletionResult.Failure(TangemSdkError.WalletIsNotCreated())
+
+        return userWalletsListManager.save(userWallet)
+            .doOnSuccess {
+                Analytics.send(MyWallets.CardWasScanned)
+
+                store.dispatchOnMain(WalletSelectorAction.AddWallet.Success)
+                store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
+                store.onUserWalletSelected(userWallet)
+            }
+    }
+
+    private fun selectWallet(userWalletId: UserWalletId) {
+        scope.launch {
+            userWalletsListManager.get(userWalletId)
+                .flatMap { userWallet ->
+                    if (userWallet.isLocked) {
+                        unlockUserWalletWithScannedCard(userWallet)
+                    } else {
+                        userWalletsListManager.selectWallet(userWalletId)
+                    }
+                }
                 .doOnFailure { error ->
-                    store.dispatchOnMain(WalletSelectorAction.AddWallet.Error(error))
+                    Timber.e(
+                        error,
+                        """
+                            Unable to select user wallet
+                            |- Wallet ID to select: $userWalletId
+                        """.trimIndent(),
+                    )
                 }
                 .doOnSuccess {
-                    Analytics.send(MyWallets.CardWasScanned)
-
-                    userWalletsListManager.selectWallet(userWallet.walletId)
-                    store.dispatchOnMain(WalletSelectorAction.AddWallet.Success)
-                    updateAccessCodeRequestPolicy(userWallet)
-                    store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
-                    store.onUserWalletSelected(userWallet)
+                    val selectedUserWallet = userWalletsListManager.selectedUserWalletSync
+                    if (selectedUserWallet != null) {
+                        store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
+                        store.onUserWalletSelected(selectedUserWallet)
+                    }
                 }
         }
     }
 
-    private fun selectWallet(id: String) {
-        scope.launch {
-            userWalletsListManager.selectWallet(UserWalletId(id))
-                .doOnFailure { error ->
-                    store.dispatchOnMain(WalletSelectorAction.HandleError(error))
-                }
-                .doOnSuccess { selectedWallet ->
-                    updateAccessCodeRequestPolicy(selectedWallet)
-                    store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
-                    store.onUserWalletSelected(selectedWallet)
-                }
-        }
-    }
-
-    private fun unlockWalletWithCard(id: String) {
-        scope.launch {
-            userWalletsListManager.get(UserWalletId(id))
-                .flatMap { userWallet ->
-                    updateUserWalletWithScannedCard(userWallet)
-                }
-                .flatMap { updatedUserWallet ->
-                    unlockUserWallet(updatedUserWallet)
-                }
-                .doOnFailure { error ->
-                    store.dispatchOnMain(WalletSelectorAction.HandleError(error))
-                }
-        }
-    }
-
-    private suspend fun updateUserWalletWithScannedCard(userWallet: UserWallet): CompletionResult<UserWallet> {
+    private suspend fun unlockUserWalletWithScannedCard(userWallet: UserWallet): CompletionResult<Unit> {
+        tangemSdkManager.changeDisplayedCardIdNumbersCount(userWallet.scanResponse)
         return tangemSdkManager.scanCard(userWallet.cardId)
             .map { scannedCard ->
                 userWallet.copy(
@@ -182,91 +224,114 @@ internal class WalletSelectorMiddleware {
                     ),
                 )
             }
-    }
-
-    private suspend fun unlockUserWallet(userWallet: UserWallet): CompletionResult<Unit> {
-        return userWalletsListManager.unlockWithCard(userWallet)
-            .doOnSuccess {
-                store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
-                store.onUserWalletSelected(userWallet)
+            .flatMap { updatedUserWallet ->
+                userWalletsListManager.save(updatedUserWallet, canOverride = true)
+            }
+            .doOnFailure {
+                tangemSdkManager.changeDisplayedCardIdNumbersCount(
+                    scanResponse = userWalletsListManager.selectedUserWalletSync?.scanResponse,
+                )
             }
     }
 
-    private fun removeWallets(walletIdsToRemove: List<String>, state: WalletSelectorState) {
+    private fun deleteWallets(userWalletsIds: List<UserWalletId>, state: WalletSelectorState) {
         Analytics.send(MyWallets.Button.DeleteWalletTapped)
 
         scope.launch {
-            when (walletIdsToRemove.size) {
+            when (userWalletsIds.size) {
                 state.wallets.size -> clearUserWallets()
-                else -> removeUserWallets(walletIdsToRemove, state)
+                else -> deleteUserWallets(
+                    userWalletsIds = userWalletsIds,
+                    currentSelectedWalletId = state.selectedWalletId,
+                )
             }
                 .doOnFailure { error ->
-                    store.dispatchOnMain(WalletSelectorAction.HandleError(error))
+                    Timber.e(
+                        error,
+                        """
+                            Unable to delete user wallets
+                            |- Wallets IDs to delete: $userWalletsIds
+                            |- Current wallets IDs: ${state.wallets.map { it.id }}
+                        """.trimIndent(),
+                    )
                 }
         }
     }
 
-    private fun renameWallet(walletId: String, newName: String) {
+    private fun renameWallet(userWalletId: UserWalletId, newName: String) {
         Analytics.send(MyWallets.Button.EditWalletTapped)
 
         scope.launch {
-            userWalletsListManager.get(walletId = UserWalletId(walletId))
-                .map { it.copy(name = newName) }
-                .flatMap { userWalletsListManager.save(it, canOverride = true) }
+            userWalletsListManager.update(userWalletId) { it.copy(name = newName) }
                 .doOnFailure { error ->
-                    store.dispatchOnMain(WalletSelectorAction.HandleError(error))
+                    Timber.e(
+                        error,
+                        """
+                            Unable to rename user wallet
+                            |- Wallet ID: $userWalletId
+                            |- New name: $newName
+                        """.trimIndent(),
+                    )
                 }
         }
     }
 
-    private suspend inline fun scanCardInternal(
-        crossinline onCardScanned: suspend (ScanResponse) -> Unit,
-    ) {
-        ScanCardProcessor.scan(
-            onSuccess = {
-                onCardScanned(it)
-            },
-            onFailure = { error ->
-                store.dispatchOnMain(WalletSelectorAction.AddWallet.Error(error))
-            },
-            onWalletNotCreated = {
-                store.dispatchOnMain(WalletSelectorAction.AddWallet.Success)
-                store.dispatchOnMain(NavigationAction.PopBackTo())
-            },
-        )
+    private fun refreshUserWalletsAmounts() {
+        scope.launch {
+            walletStoresManager.updateAmounts(
+                userWallets = userWalletsListManager.userWallets.firstOrNull().orEmpty(),
+            )
+                .doOnFailure { error ->
+                    Timber.e(error, "Unable to refresh user wallets amounts")
+                }
+        }
     }
 
     private suspend fun clearUserWallets(): CompletionResult<Unit> {
         return userWalletsListManager.clear()
             .flatMap { walletStoresManager.clear() }
+            .flatMap { tangemSdkManager.clearSavedUserCodes() }
             .doOnSuccess {
+                // !!! Workaround !!!
+                store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
+                delay(timeMillis = 280)
                 store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Home))
             }
     }
 
-    private suspend fun removeUserWallets(
-        walletIdsToRemove: List<String>,
-        state: WalletSelectorState,
+    private suspend fun deleteUserWallets(
+        userWalletsIds: List<UserWalletId>,
+        currentSelectedWalletId: UserWalletId?,
     ): CompletionResult<Unit> {
-        val prevSelectedWalletId = state.selectedWalletId
-        return userWalletsListManager.delete(walletIdsToRemove.map { UserWalletId(it) })
-            .flatMap { walletStoresManager.delete(walletIdsToRemove) }
+        return userWalletsListManager.delete(userWalletsIds)
+            .flatMap { walletStoresManager.delete(userWalletsIds) }
+            .flatMap { deleteAccessCodes(userWalletsIds) }
             .doOnSuccess {
-                val selectedWallet = userWalletsListManager.selectedUserWalletSync ?: return@doOnSuccess
-                val isSelectedWalletRemoved = prevSelectedWalletId != selectedWallet.walletId.stringValue
+                val selectedUserWallet = userWalletsListManager.selectedUserWalletSync
 
-                if (isSelectedWalletRemoved) {
-                    updateAccessCodeRequestPolicy(selectedWallet)
-                    store.onUserWalletSelected(selectedWallet)
+                when {
+                    selectedUserWallet == null -> {
+                        store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Welcome))
+                    }
+                    currentSelectedWalletId != selectedUserWallet.walletId -> {
+                        store.onUserWalletSelected(selectedUserWallet)
+                    }
                 }
             }
     }
 
-    private fun updateAccessCodeRequestPolicy(userWallet: UserWallet) {
-        tangemSdkManager.setAccessCodeRequestPolicy(
-            useBiometricsForAccessCode = preferencesStorage.shouldSaveAccessCodes &&
-                userWallet.hasAccessCode,
-        )
+    private suspend fun deleteAccessCodes(userWalletsIds: List<UserWalletId>): CompletionResult<Unit> {
+        val cardsIds = userWalletsListManager.userWallets.firstOrNull()
+            ?.asSequence()
+            ?.filter { it.walletId in userWalletsIds }
+            ?.flatMap { it.cardsInWallet }
+            ?.toSet()
+
+        return if (cardsIds.isNullOrEmpty()) {
+            CompletionResult.Success(Unit)
+        } else {
+            tangemSdkManager.deleteSavedUserCodes(cardsIds.toSet())
+        }
     }
 
     private suspend fun UserWalletModel.updateWalletStoresAndCalculateFiatBalance(
@@ -280,9 +345,8 @@ internal class WalletSelectorMiddleware {
                 is UserWalletModel.Type.SingleCurrency -> type
             },
             fiatBalance = totalFiatBalanceCalculator.calculate(
-                prevAmount = fiatBalance.amount,
                 walletStores = walletStores,
-                initial = TotalFiatBalance.Loaded(BigDecimal.ZERO),
+                initial = TotalFiatBalance.Loading,
             ),
         )
     }

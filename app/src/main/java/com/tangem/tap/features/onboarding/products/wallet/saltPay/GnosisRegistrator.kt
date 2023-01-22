@@ -39,11 +39,10 @@ class GnosisRegistrator(
 
     private val otpProcessorContractAddress: String = when (walletManager.wallet.blockchain) {
         Blockchain.SaltPay -> "0x3B4397C817A26521Df8bD01a949AFDE2251d91C2"
-        Blockchain.SaltPayTestnet -> "0x710BF23486b549836509a08c184cE0188830f197"
         else -> throw IllegalArgumentException("GnosisRegistrator supports only the SaltPay blockchain")
     }
 
-    private val addressTreasureSafe = "0x8e9260a049d3Aa9ac60D0d4F27017320E0e2396B"
+    private val addressTreasureSafe = "0x24A3c2382497075b6D93258f5938f7B661c06318"
 
     private val atomicNonce = AtomicLong()
 
@@ -160,11 +159,15 @@ class GnosisRegistrator(
         return Result.Success(Unit)
     }
 
+    @Suppress("MagicNumber")
     private fun Result<List<Amount>>.extractFeeAmount(): Result<Amount> {
         return when (this) {
             is Result.Success -> {
-                if (this.data.size != 3) Result.Failure(BlockchainSdkError.FailedToLoadFee)
-                else Result.Success(this.data[1])
+                if (this.data.size != 3) {
+                    Result.Failure(BlockchainSdkError.FailedToLoadFee)
+                } else {
+                    Result.Success(this.data[1])
+                }
             }
             is Result.Failure -> this
         }
