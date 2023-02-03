@@ -2,11 +2,13 @@ package com.tangem.tap.features.walletSelector.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tangem.core.analytics.Analytics
 import com.tangem.domain.common.util.UserWalletId
+import com.tangem.tap.common.analytics.events.MyWallets
 import com.tangem.tap.common.extensions.dispatchOnMain
 import com.tangem.tap.features.walletSelector.redux.WalletSelectorAction
 import com.tangem.tap.features.walletSelector.redux.WalletSelectorState
-import com.tangem.tap.features.walletSelector.ui.model.RenameWalletDialog
+import com.tangem.tap.features.walletSelector.ui.model.DialogModel
 import com.tangem.tap.store
 import com.tangem.tap.userWalletsListManager
 import com.tangem.tap.walletStoresManager
@@ -65,27 +67,28 @@ internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSele
     }
 
     fun renameWallet() = with(state.value) {
-        if (editingUserWalletsIds.isNotEmpty() && renameWalletDialog == null) {
+        if (editingUserWalletsIds.isNotEmpty() && dialog == null) {
             val editedUserWalletId = editingUserWalletsIds.first()
             val editedUserWallet = (multiCurrencyWallets + singleCurrencyWallets)
                 .find { it.id == editedUserWalletId }
 
             if (editedUserWallet != null) {
-                val dialog = RenameWalletDialog(
+                Analytics.send(MyWallets.Button.EditWalletTapped())
+                val dialog = DialogModel.RenameWalletDialog(
                     currentName = editedUserWallet.name,
-                    onApply = { newName ->
+                    onConfirm = { newName ->
                         store.dispatch(WalletSelectorAction.RenameWallet(editedUserWalletId, newName))
                         stateInternal.update { prevState ->
                             prevState.copy(
-                                renameWalletDialog = null,
+                                dialog = null,
                                 editingUserWalletsIds = emptyList(),
                             )
                         }
                     },
-                    onCancel = {
+                    onDismiss = {
                         stateInternal.update { prevState ->
                             prevState.copy(
-                                renameWalletDialog = null,
+                                dialog = null,
                             )
                         }
                     },
@@ -93,7 +96,7 @@ internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSele
 
                 stateInternal.update { prevState ->
                     prevState.copy(
-                        renameWalletDialog = dialog,
+                        dialog = dialog,
                     )
                 }
             }
@@ -102,7 +105,30 @@ internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSele
 
     fun deleteWallets() = with(state.value) {
         if (editingUserWalletsIds.isNotEmpty()) {
-            store.dispatch(WalletSelectorAction.RemoveWallets(userWalletsIds = editingUserWalletsIds))
+            val dialog = DialogModel.RemoveWalletDialog(
+                onConfirm = {
+                    store.dispatch(WalletSelectorAction.RemoveWallets(editingUserWalletsIds))
+                    stateInternal.update { prevState ->
+                        prevState.copy(
+                            dialog = null,
+                            editingUserWalletsIds = emptyList(),
+                        )
+                    }
+                },
+                onDismiss = {
+                    stateInternal.update { prevState ->
+                        prevState.copy(
+                            dialog = null,
+                        )
+                    }
+                },
+            )
+
+            stateInternal.update { prevState ->
+                prevState.copy(
+                    dialog = dialog,
+                )
+            }
         }
     }
 

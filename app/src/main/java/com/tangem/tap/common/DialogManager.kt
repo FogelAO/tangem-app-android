@@ -14,12 +14,12 @@ import com.tangem.tap.features.details.ui.walletconnect.dialogs.ClipboardOrScanQ
 import com.tangem.tap.features.details.ui.walletconnect.dialogs.PersonalSignDialog
 import com.tangem.tap.features.details.ui.walletconnect.dialogs.TransactionDialog
 import com.tangem.tap.features.onboarding.AddressInfoBottomSheetDialog
-import com.tangem.tap.features.onboarding.products.twins.redux.TwinCardsAction
-import com.tangem.tap.features.onboarding.products.twins.ui.dialog.CreateWalletInterruptDialog
+import com.tangem.tap.features.onboarding.OnboardingDialog
+import com.tangem.tap.features.onboarding.products.twins.ui.dialog.TwinningProcessNotCompletedDialog
 import com.tangem.tap.features.onboarding.products.wallet.redux.BackupDialog
-import com.tangem.tap.features.onboarding.products.wallet.redux.OnboardingDialog
 import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.InterruptOnboardingDialog
 import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.NoFundsForActivationDialog
+import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.PutVisaCardDialog
 import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.RegistrationErrorDialog
 import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.SaltPayDialog
 import com.tangem.tap.features.onboarding.products.wallet.ui.dialogs.AddMoreBackupCardsDialog
@@ -74,7 +74,7 @@ class DialogManager : StoreSubscriber<GlobalState> {
             is AppDialog.ScanFailsDialog -> ScanFailsDialog.create(context)
             is AppDialog.AddressInfoDialog -> AddressInfoBottomSheetDialog(state.dialog, context)
             is AppDialog.TestActionsDialog -> TestActionsBottomSheetDialog(state.dialog, context)
-            is TwinCardsAction.Wallet.ShowInterruptDialog -> CreateWalletInterruptDialog.create(context)
+            is OnboardingDialog.TwinningProcessNotCompleted -> TwinningProcessNotCompletedDialog.create(context)
             is OnboardingDialog.InterruptOnboarding -> InterruptOnboardingDialog.create(context, state.dialog)
             is WalletConnectDialog.UnsupportedCard ->
                 SimpleAlertDialog.create(
@@ -132,6 +132,7 @@ class DialogManager : StoreSubscriber<GlobalState> {
             is BackupDialog.UnfinishedBackupFound -> UnfinishedBackupFoundDialog.create(context)
             is BackupDialog.ConfirmDiscardingBackup -> ConfirmDiscardingBackupDialog.create(context)
             is SaltPayDialog.Activation.NoGas -> NoFundsForActivationDialog.create(context)
+            is SaltPayDialog.Activation.PutVisaCard -> PutVisaCardDialog.create(context)
             is SaltPayDialog.Activation.OnError -> RegistrationErrorDialog.create(context, state.dialog)
             is WalletDialog.CurrencySelectionDialog -> CurrencySelectionDialog.create(state.dialog, context)
             is WalletDialog.ChooseTradeActionDialog -> ChooseTradeActionBottomSheetDialog(context, state.dialog)

@@ -49,6 +49,14 @@ internal fun WalletStoreModel.updateWithAmounts(
     )
 }
 
+internal fun WalletStoreModel.updateWithDemoAmounts(
+    wallet: Wallet,
+): WalletStoreModel {
+    return this.copy(
+        walletsData = walletsData.updateWithDemoAmounts(wallet = wallet),
+    )
+}
+
 internal fun WalletStoreModel.updateWithFiatRates(
     rates: Map<String, Double>,
 ): WalletStoreModel {
@@ -88,39 +96,38 @@ internal fun WalletStoreModel.updateWithRent(rent: WalletStoreModel.WalletRent?)
     )
 }
 
-internal fun WalletStoreModel.isSameWalletStore(other: WalletStoreModel): Boolean {
-    return this.blockchain == other.blockchain &&
-        this.derivationPath == other.derivationPath
-}
-
 private inline fun List<WalletStoreModel>.replaceWalletStores(
     walletStoresToUpdate: List<WalletStoreModel>,
     update: (walletStore: WalletStoreModel) -> WalletStoreModel,
 ): List<WalletStoreModel> {
     val mutableStores = ArrayList<WalletStoreModel>(this)
 
-    walletStoresToUpdate
-        .asSequence()
-        .map { it.blockchain to it.derivationPath }
-        .forEach { (blockchain, derivationPath) ->
-            val index = mutableStores.indexOfFirst {
-                it.blockchain == blockchain && it.derivationPath == derivationPath
-            }
-            val currentWalletStore = mutableStores[index]
-            val updatedWalletStore = update(currentWalletStore)
+    walletStoresToUpdate.forEach { walletStoreToUpdate ->
+        val index = mutableStores.indexOfFirst(walletStoreToUpdate::isSameWalletStore)
+        // Can be possible if user hides wallet store when it's tokens is loading
+        if (index == -1) return@forEach
 
-            if (currentWalletStore != updatedWalletStore) {
-                Timber.d(
-                    """
+        val currentWalletStore = mutableStores[index]
+        val updatedWalletStore = update(currentWalletStore)
+
+        if (currentWalletStore != updatedWalletStore) {
+            Timber.d(
+                """
                         Update wallet store in storage
                         |- User wallet ID: ${updatedWalletStore.userWalletId}
                         |- Blockchain: ${updatedWalletStore.blockchain}
-                    """.trimIndent(),
-                )
+                """.trimIndent(),
+            )
 
-                mutableStores[index] = updatedWalletStore
-            }
+            mutableStores[index] = updatedWalletStore
         }
+    }
 
     return mutableStores
+}
+
+internal fun WalletStoreModel.isSameWalletStore(other: WalletStoreModel): Boolean {
+    return this.userWalletId == other.userWalletId &&
+        this.blockchain == other.blockchain &&
+        this.derivationPath == other.derivationPath
 }

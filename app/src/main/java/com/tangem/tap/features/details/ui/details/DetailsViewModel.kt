@@ -1,7 +1,6 @@
 package com.tangem.tap.features.details.ui.details
 
 import com.tangem.core.analytics.Analytics
-import com.tangem.domain.common.TapWorkarounds.isSaltPay
 import com.tangem.tap.common.analytics.events.Settings
 import com.tangem.tap.common.feedback.FeedbackEmail
 import com.tangem.tap.common.feedback.SupportInfo
@@ -38,9 +37,9 @@ class DetailsViewModel(private val store: Store<AppState>) {
                 SettingsElement.PrivacyPolicy -> {
                     if (state.privacyPolicyUrl != null) it else null
                 }
-                SettingsElement.AppSettings -> if (state.isBiometricsAvailable) it else null
+                SettingsElement.AppSettings -> if (state.appSettingsState.isBiometricsAvailable) it else null
                 SettingsElement.AppCurrency -> if (cardTypesResolver?.isMultiwalletAllowed() != true) it else null
-                // SettingsElement.ReferralProgram -> if (state.scanResponse?.card?.isTangemWallet == true) it else null
+                SettingsElement.ReferralProgram -> if (cardTypesResolver?.isTangemWallet() == true) it else null
                 else -> it
             }
         }
@@ -63,6 +62,7 @@ class DetailsViewModel(private val store: Store<AppState>) {
     private fun handleClickingSettingsItem(item: SettingsElement) {
         when (item) {
             SettingsElement.WalletConnect -> {
+                Analytics.send(Settings.ButtonWalletConnect())
                 store.dispatch(NavigationAction.NavigateTo(AppScreen.WalletConnectSessions))
             }
             SettingsElement.Chat -> {
@@ -94,9 +94,9 @@ class DetailsViewModel(private val store: Store<AppState>) {
             SettingsElement.PrivacyPolicy -> {
                 // TODO: To be available later
             }
-            // SettingsElement.ReferralProgram -> {
-            //     store.dispatch(NavigationAction.NavigateTo(AppScreen.ReferralProgram))
-            // }
+            SettingsElement.ReferralProgram -> {
+                store.dispatch(NavigationAction.NavigateTo(AppScreen.ReferralProgram))
+            }
         }
     }
 

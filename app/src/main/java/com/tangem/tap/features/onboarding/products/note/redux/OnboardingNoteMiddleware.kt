@@ -18,10 +18,12 @@ import com.tangem.tap.common.postUi
 import com.tangem.tap.common.redux.AppDialog
 import com.tangem.tap.common.redux.AppState
 import com.tangem.tap.common.redux.global.GlobalAction
+import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.domain.TapError
 import com.tangem.tap.domain.extensions.makePrimaryWalletManager
 import com.tangem.tap.features.demo.DemoHelper
 import com.tangem.tap.features.home.RUSSIA_COUNTRY_CODE
+import com.tangem.tap.features.onboarding.OnboardingDialog
 import com.tangem.tap.features.onboarding.OnboardingHelper
 import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.features.wallet.redux.ProgressState
@@ -175,21 +177,30 @@ private fun handleNoteAction(appState: () -> AppState?, action: Action, dispatch
 
             val topUpUrl = walletManager.getTopUpUrl() ?: return
             val blockchain = walletManager.wallet.blockchain
-            if (globalState.userCountryCode == RUSSIA_COUNTRY_CODE) {
-                val dialogData = WalletDialog.RussianCardholdersWarningDialog.Data(topUpUrl, blockchain)
-                store.dispatchOnMain(WalletAction.DialogAction.RussianCardholdersWarningDialog(dialogData))
-                return
-            }
 
             val currencyType = AnalyticsParam.CurrencyType.Blockchain(blockchain)
             Analytics.send(Onboarding.Topup.ButtonBuyCrypto(currencyType))
 
-            store.dispatchOpenUrl(topUpUrl)
+            if (globalState.userCountryCode == RUSSIA_COUNTRY_CODE) {
+                val dialogData = WalletDialog.RussianCardholdersWarningDialog.Data(topUpUrl)
+                store.dispatchOnMain(WalletAction.DialogAction.RussianCardholdersWarningDialog(dialogData))
+            } else {
+                store.dispatchOpenUrl(topUpUrl)
+            }
         }
         is OnboardingNoteAction.Done -> {
             store.dispatch(GlobalAction.Onboarding.Stop)
             OnboardingHelper.trySaveWalletAndNavigateToWalletScreen(scanResponse)
         }
-        else -> {}
+        is OnboardingNoteAction.OnBackPressed -> {
+            store.dispatchDialogShow(
+                OnboardingDialog.InterruptOnboarding(
+                    onOk = {
+                        store.dispatch(NavigationAction.PopBackTo())
+                    },
+                ),
+            )
+        }
+        else -> Unit
     }
 }

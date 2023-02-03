@@ -12,7 +12,7 @@ data class DetailsScreenState(
     val onItemsClick: (SettingsElement) -> Unit,
     val onSocialNetworkClick: (SocialNetworkLink) -> Unit,
 ) {
-    val appNameRes: Int = R.string.app_name
+    val appNameRes: Int = R.string.tangem_app_name
 }
 
 @Immutable
@@ -23,7 +23,7 @@ enum class SettingsElement(
     WalletConnect(R.drawable.ic_walletconnect, R.string.wallet_connect_title),
     Chat(R.drawable.ic_chat, R.string.details_chat),
     SendFeedback(R.drawable.ic_comment, R.string.details_row_title_send_feedback),
-    // ReferralProgram(R.drawable.ic_add_friends, R.string.details_referral_title),
+    ReferralProgram(R.drawable.ic_add_friends, R.string.details_referral_title),
     CardSettings(R.drawable.ic_card_settings, R.string.card_settings_title),
     AppCurrency(R.drawable.ic_currency, R.string.details_row_title_currency),
     AppSettings(R.drawable.ic_settings, R.string.app_settings_title),
@@ -44,7 +44,7 @@ sealed class SocialNetwork(val id: String, val iconRes: Int) {
     object Facebook : SocialNetwork("Facebook", R.drawable.ic_facebook)
     object Instagram : SocialNetwork("Instagram", R.drawable.ic_instagram)
     object GitHub : SocialNetwork("GitHub", R.drawable.ic_github)
-    object Youtube : SocialNetwork("Youtube", R.drawable.ic_youtube)
+    object YouTube : SocialNetwork("YouTube", R.drawable.ic_youtube)
     object LinkedIn : SocialNetwork("LinkedIn", R.drawable.ic_linkedin)
 }
 
@@ -55,7 +55,7 @@ object TangemSocialAccounts {
         SocialNetworkLink(SocialNetwork.Facebook, "https://m.facebook.com/TangemCards/"),
         SocialNetworkLink(SocialNetwork.Instagram, "https://instagram.com/tangemcards"),
         SocialNetworkLink(SocialNetwork.GitHub, "https://github.com/tangem"),
-        SocialNetworkLink(SocialNetwork.Youtube, "https://youtube.com/channel/UCFGwLS7yggzVkP6ozte0m1w"),
+        SocialNetworkLink(SocialNetwork.YouTube, "https://youtube.com/channel/UCFGwLS7yggzVkP6ozte0m1w"),
         SocialNetworkLink(SocialNetwork.LinkedIn, "https://www.linkedin.com/company/tangem"),
     )
     val accountsRu: List<SocialNetworkLink> = listOf(
@@ -64,7 +64,7 @@ object TangemSocialAccounts {
         SocialNetworkLink(SocialNetwork.Facebook, "https://m.facebook.com/TangemCards/"),
         SocialNetworkLink(SocialNetwork.Instagram, "https://instagram.com/tangemcards"),
         SocialNetworkLink(SocialNetwork.GitHub, "https://github.com/tangem"),
-        SocialNetworkLink(SocialNetwork.Youtube, "https://youtube.com/channel/UCFGwLS7yggzVkP6ozte0m1w"),
+        SocialNetworkLink(SocialNetwork.YouTube, "https://youtube.com/channel/UCFGwLS7yggzVkP6ozte0m1w"),
         SocialNetworkLink(SocialNetwork.LinkedIn, "https://www.linkedin.com/company/tangem"),
     )
 }

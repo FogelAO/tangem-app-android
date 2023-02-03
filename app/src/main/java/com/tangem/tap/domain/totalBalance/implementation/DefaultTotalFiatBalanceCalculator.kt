@@ -47,8 +47,11 @@ internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
                 is WalletDataModel.VerifiedOnline,
                 is WalletDataModel.SameCurrencyTransactionInProgress,
                 is WalletDataModel.TransactionInProgress,
-                is WalletDataModel.NoAccount,
-                -> TotalFiatBalanceStatus.Loaded
+                is WalletDataModel.NoAccount -> if (walletData.fiatRate == null) {
+                    TotalFiatBalanceStatus.Error
+                } else {
+                    TotalFiatBalanceStatus.Loaded
+                }
                 is WalletDataModel.Unreachable,
                 is WalletDataModel.MissedDerivation,
                 -> TotalFiatBalanceStatus.Error

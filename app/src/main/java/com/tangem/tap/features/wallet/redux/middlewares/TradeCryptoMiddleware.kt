@@ -4,6 +4,7 @@ import androidx.core.os.bundleOf
 import com.tangem.blockchain.blockchains.ethereum.EthereumWalletManager
 import com.tangem.blockchain.common.AmountType
 import com.tangem.core.analytics.Analytics
+import com.tangem.domain.common.extensions.toCoinId
 import com.tangem.domain.common.extensions.toNetworkId
 import com.tangem.feature.swap.presentation.SwapFragment
 import com.tangem.tap.common.analytics.events.AnalyticsParam
@@ -47,21 +48,22 @@ class TradeCryptoMiddleware {
         state: () -> AppState?,
         action: WalletAction.TradeCryptoAction.Buy,
     ) {
+        val selectedWalletData = store.state.walletState.selectedWalletData ?: return
+
+        val currency = selectedWalletData.currency
+        Analytics.send(Token.ButtonBuy(AnalyticsParam.CurrencyType.Currency(currency)))
+
         if (action.checkUserLocation && state()?.globalState?.userCountryCode == RUSSIA_COUNTRY_CODE) {
             store.dispatchOnMain(WalletAction.DialogAction.RussianCardholdersWarningDialog())
             return
         }
 
-        val selectedWalletData = store.state.walletState.selectedWalletData ?: return
         val card = store.state.globalState.scanResponse?.card ?: return
-
         val addresses = selectedWalletData.walletAddresses?.list.orEmpty()
         if (addresses.isEmpty()) return
 
         val exchangeManager = store.state.globalState.exchangeManager
         val appCurrency = store.state.globalState.appCurrency
-        val currency = selectedWalletData.currency
-        Analytics.send(Token.ButtonBuy(AnalyticsParam.CurrencyType.Currency(currency)))
 
         if (currency is Currency.Token && currency.blockchain.isTestnet()) {
             val walletManager = store.state.walletState.getWalletManager(currency)
@@ -155,11 +157,11 @@ class TradeCryptoMiddleware {
         return when (this) {
             is Currency.Blockchain -> {
                 SwapCurrency.NativeToken(
-                    id = blockchain.id,
+                    id = blockchain.toCoinId(),
                     name = this.currencyName,
                     symbol = this.currencySymbol,
                     networkId = this.blockchain.toNetworkId(),
-                    logoUrl = getIconUrl(this.blockchain.toNetworkId()),
+                    logoUrl = getIconUrl(this.blockchain.toCoinId()),
                 )
             }
             is Currency.Token -> SwapCurrency.NonNativeToken(

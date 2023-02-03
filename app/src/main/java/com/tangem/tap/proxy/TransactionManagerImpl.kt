@@ -20,6 +20,7 @@ import com.tangem.domain.common.extensions.fromNetworkId
 import com.tangem.lib.crypto.TransactionManager
 import com.tangem.lib.crypto.models.Currency
 import com.tangem.lib.crypto.models.ProxyAmount
+import com.tangem.lib.crypto.models.ProxyNetworkInfo
 import com.tangem.lib.crypto.models.transactions.SendTxResult
 import com.tangem.tap.common.redux.global.GlobalAction
 import com.tangem.tap.domain.TangemSigner
@@ -32,10 +33,8 @@ class TransactionManagerImpl(
     private val appStateHolder: AppStateHolder,
 ) : TransactionManager {
 
-    override suspend fun sendTransaction(
+    override suspend fun sendApproveTransaction(
         networkId: String,
-        amountToSend: BigDecimal,
-        currencyToSend: Currency,
         feeAmount: BigDecimal,
         estimatedGas: Int,
         destinationAddress: String,
@@ -43,8 +42,58 @@ class TransactionManagerImpl(
     ): SendTxResult {
         val blockchain = requireNotNull(Blockchain.fromNetworkId(networkId)) { "blockchain not found" }
         val walletManager = getActualWalletManager(blockchain)
-        val amount = createAmount(amountToSend, currencyToSend, blockchain)
+        walletManager.update()
+        val amount = Amount(value = BigDecimal.ZERO, blockchain = blockchain)
+        return sendTransactionInternal(
+            walletManager = walletManager,
+            amount = amount,
+            blockchain = blockchain,
+            feeAmount = feeAmount,
+            estimatedGas = estimatedGas,
+            destinationAddress = destinationAddress,
+            dataToSign = dataToSign,
+        )
+    }
 
+    override suspend fun sendTransaction(
+        networkId: String,
+        amountToSend: BigDecimal,
+        feeAmount: BigDecimal,
+        estimatedGas: Int,
+        destinationAddress: String,
+        dataToSign: String,
+        isSwap: Boolean,
+        currencyToSend: Currency,
+    ): SendTxResult {
+        val blockchain = requireNotNull(Blockchain.fromNetworkId(networkId)) { "blockchain not found" }
+        val walletManager = getActualWalletManager(blockchain)
+        walletManager.update()
+        val amount = if (isSwap) {
+            createAmountForSwap(amountToSend, currencyToSend, blockchain)
+        } else {
+            createAmount(amountToSend, currencyToSend, blockchain)
+        }
+        return sendTransactionInternal(
+            walletManager = walletManager,
+            amount = amount,
+            blockchain = blockchain,
+            feeAmount = feeAmount,
+            estimatedGas = estimatedGas,
+            destinationAddress = destinationAddress,
+            dataToSign = dataToSign,
+        )
+    }
+
+    @Suppress("LongParameterList")
+    private suspend fun sendTransactionInternal(
+        walletManager: WalletManager,
+        amount: Amount,
+        blockchain: Blockchain,
+        feeAmount: BigDecimal,
+        estimatedGas: Int,
+        destinationAddress: String,
+        dataToSign: String,
+    ): SendTxResult {
         val txData = walletManager.createTransaction(
             amount = amount,
             fee = Amount(value = feeAmount, blockchain = blockchain),
@@ -62,8 +111,18 @@ class TransactionManagerImpl(
         return handleSendResult(sendResult)
     }
 
+    override fun getExplorerTransactionLink(networkId: String, txAddress: String): String {
+        val blockchain = Blockchain.fromNetworkId(networkId) ?: error("blockchain not found")
+        return blockchain.getExploreTxUrl(txAddress)
+    }
+
     override fun getNativeTokenDecimals(networkId: String): Int {
         return Blockchain.fromNetworkId(networkId)?.decimals() ?: error("blockchain not found")
+    }
+
+    override suspend fun updateWalletManager(networkId: String) {
+        val blockchain = requireNotNull(Blockchain.fromNetworkId(networkId)) { "blockchain not found" }
+        getActualWalletManager(blockchain).update()
     }
 
     override fun calculateFee(networkId: String, gasPrice: String, estimatedGas: Int): BigDecimal {
@@ -95,6 +154,15 @@ class TransactionManagerImpl(
         }
     }
 
+    override fun getBlockchainInfo(networkId: String): ProxyNetworkInfo {
+        val blockchain = requireNotNull(Blockchain.fromNetworkId(networkId)) { "blockchain not found" }
+        return ProxyNetworkInfo(
+            name = blockchain.fullName,
+            blockchainId = blockchain.id,
+            blockchainCurrency = blockchain.currency,
+        )
+    }
+
     private fun handleSendResult(result: SimpleResult): SendTxResult {
         when (result) {
             is SimpleResult.Success -> return SendTxResult.Success
@@ -119,7 +187,7 @@ class TransactionManagerImpl(
         return TangemSigner(
             card = actualCard,
             tangemSdk = tangemSdk,
-            initialMessage = Message("test transaction title", "test description"),
+            initialMessage = Message(),
         ) { signResponse ->
             store.dispatch(
                 GlobalAction.UpdateWalletSignedHashes(
@@ -175,6 +243,29 @@ class TransactionManagerImpl(
             }
             is Currency.NonNativeToken -> {
                 Amount(convertNonNativeToken(currency), amount)
+            }
+        }
+    }
+
+    private fun createAmountForSwap(
+        amount: BigDecimal,
+        currency: Currency?,
+        blockchain: Blockchain,
+    ): Amount {
+        return when (currency) {
+            is Currency.NativeToken,
+            null,
+            -> {
+                Amount(value = amount, blockchain = blockchain)
+            }
+            is Currency.NonNativeToken -> {
+                // 1. when creates swap amount for NonNativeToken, amount should be ZERO
+                // 2. Amount has .Coin type, as workaround to use destinationAddress in bsdk, not contractAddress
+                Amount(
+                    currencySymbol = currency.symbol,
+                    value = BigDecimal.ZERO,
+                    decimals = currency.decimalCount,
+                )
             }
         }
     }

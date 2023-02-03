@@ -17,6 +17,7 @@ object SaltPayExceptionHandler {
             is SaltPayActivationError -> {
                 val dialog = when (throwable) {
                     is SaltPayActivationError.NoGas -> SaltPayDialog.Activation.NoGas
+                    is SaltPayActivationError.PutVisaCard -> SaltPayDialog.Activation.PutVisaCard
                     else -> SaltPayDialog.Activation.OnError(throwable)
                 }
                 store.dispatchDialogShow(dialog)
@@ -27,9 +28,7 @@ object SaltPayExceptionHandler {
                         val message = throwable.customMessage
                         store.dispatchDialogShow(AppDialog.SimpleOkErrorDialog(message))
                     }
-                    else -> {
-                        // do nothing
-                    }
+                    else -> Unit
                 }
             }
             is BlockchainSdkError -> {

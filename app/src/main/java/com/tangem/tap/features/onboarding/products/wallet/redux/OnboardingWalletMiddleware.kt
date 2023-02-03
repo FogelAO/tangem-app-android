@@ -22,6 +22,7 @@ import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.domain.tokens.models.BlockchainNetwork
 import com.tangem.tap.features.demo.DemoHelper
 import com.tangem.tap.features.home.redux.HomeAction
+import com.tangem.tap.features.onboarding.OnboardingDialog
 import com.tangem.tap.features.onboarding.OnboardingHelper
 import com.tangem.tap.features.onboarding.products.wallet.saltPay.redux.OnboardingSaltPayAction
 import com.tangem.tap.features.onboarding.products.wallet.saltPay.redux.OnboardingSaltPayState
@@ -154,7 +155,7 @@ private fun handleWalletAction(action: Action, state: () -> AppState?, dispatch:
 
             if (scanResponse == null) {
                 store.dispatch(NavigationAction.PopBackTo())
-                store.dispatch(HomeAction.ReadCard)
+                store.dispatch(HomeAction.ReadCard())
             } else {
                 val backupState = store.state.onboardingWalletState.backupState
                 val updatedScanResponse = updateScanResponseAfterBackup(scanResponse, backupState)

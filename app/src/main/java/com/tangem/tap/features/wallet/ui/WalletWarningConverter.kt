@@ -25,14 +25,17 @@ class WalletWarningConverter(
             is WalletWarning.BalanceNotEnoughForFee -> {
                 context.getString(
                     R.string.token_details_send_blocked_fee_format,
+                    message.currencyName,
                     message.blockchainFullName,
+                    message.currencyName,
                     message.blockchainFullName,
+                    message.blockchainSymbol,
                 )
             }
             is WalletWarning.TransactionInProgress -> {
                 context.getString(
                     R.string.token_details_send_blocked_tx_format,
-                    message.currencyName
+                    message.currencyName,
                 )
             }
             is WalletWarning.Rent -> {

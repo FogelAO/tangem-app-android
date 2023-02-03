@@ -14,6 +14,8 @@ interface UserWalletManager {
      */
     suspend fun getUserTokens(networkId: String): List<Currency>
 
+    fun getNativeTokenForNetwork(networkId: String): Currency
+
     /**
      * Returns user walletId
      */
@@ -31,6 +33,7 @@ interface UserWalletManager {
      *
      * @param currency to add to wallet
      */
+    @Throws(IllegalStateException::class)
     fun addToken(currency: Currency)
 
     /**
@@ -38,6 +41,7 @@ interface UserWalletManager {
      *
      * @param networkId for currency
      */
+    @Throws(IllegalStateException::class)
     fun getWalletAddress(networkId: String): String
 
     /**
@@ -49,14 +53,19 @@ interface UserWalletManager {
     @Throws(IllegalStateException::class)
     fun getCurrentWalletTokensBalance(networkId: String): Map<String, ProxyAmount>
 
-    /**
-     * Returns selected app currency
-     */
-    fun getUserAppCurrency(): ProxyFiatCurrency
+    fun getNativeTokenBalance(networkId: String): ProxyAmount?
 
     /**
      * @param networkId
      * @return currency name
      */
-    fun getCurrencyByNetworkId(networkId: String): String
+    fun getNetworkCurrency(networkId: String): String
+
+    /**
+     * Returns selected app currency
+     */
+    fun getUserAppCurrency(): ProxyFiatCurrency
+
+    @Throws(IllegalStateException::class)
+    fun getLastTransactionHash(networkId: String): String?
 }

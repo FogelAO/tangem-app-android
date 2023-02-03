@@ -49,10 +49,12 @@ android {
 
 dependencies {
     /** Core modules */
+    implementation(project(":core:analytics"))
     implementation(project(":core:utils"))
     implementation(project(":core:ui"))
 
     /** AndroidX */
+    implementation(AndroidX.activityCompose)
     implementation(AndroidX.appCompat)
     implementation(AndroidX.fragmentKtx)
     implementation(AndroidX.lifecycleViewModelKtx)
@@ -63,6 +65,7 @@ dependencies {
     implementation(Compose.material)
     implementation(Compose.uiTooling)
     implementation(Compose.coil)
+    implementation(Compose.constraintLayout)
 
     /** Domain */
     implementation(project(":features:swap:domain"))

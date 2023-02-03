@@ -20,10 +20,11 @@ object Versions {
     // region Compose
     const val compose = "1.3.1"
     const val composeFoundation = "1.3.1"
+    const val composeConstraint = "1.0.1"
     // endregion Compose
 
     // region Other libraries
-    const val accompanist = "0.23.0"
+    const val accompanist = "0.27.1"
     const val amplitude = "2.36.1"
     const val appsflyer = "6.5.1"
     const val armadillo = "0.9.0"
@@ -60,10 +61,10 @@ object Versions {
     // endregion Other libraries
 
     // region Tangem
-    const val tangemBlockchainSdk = "develop-151"
+    const val tangemBlockchainSdk = "develop-154"
     // const val tangemBlockchainSdk = "0.0.1" // Keep it! - used for local builds
 
-    const val tangemCardSdk = "develop-180"
+    const val tangemCardSdk = "develop-184"
     // const val tangemCardSgk = "0.0.1" // Keep it! - used for local builds
     // endregion Tangem
 
