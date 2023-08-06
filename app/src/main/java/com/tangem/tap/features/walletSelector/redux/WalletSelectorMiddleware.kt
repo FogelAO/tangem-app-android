@@ -1,36 +1,27 @@
 package com.tangem.tap.features.walletSelector.redux
 
-import com.tangem.common.CompletionResult
+import com.tangem.common.*
 import com.tangem.common.core.TangemSdkError
-import com.tangem.common.doOnFailure
-import com.tangem.common.doOnSuccess
-import com.tangem.common.flatMap
-import com.tangem.common.map
 import com.tangem.core.analytics.Analytics
-import com.tangem.domain.common.ScanResponse
-import com.tangem.domain.common.util.UserWalletId
+import com.tangem.core.navigation.AppScreen
+import com.tangem.core.navigation.NavigationAction
+import com.tangem.domain.models.scan.ScanResponse
+import com.tangem.domain.userwallets.UserWalletBuilder
+import com.tangem.domain.userwallets.UserWalletIdBuilder
+import com.tangem.domain.wallets.models.UserWallet
+import com.tangem.domain.wallets.models.UserWalletId
+import com.tangem.tap.*
+import com.tangem.tap.common.analytics.events.AnalyticsParam
+import com.tangem.tap.common.analytics.events.Basic
 import com.tangem.tap.common.analytics.events.MyWallets
-import com.tangem.tap.common.analytics.paramsInterceptor.BatchIdParamsInterceptor
 import com.tangem.tap.common.extensions.dispatchOnMain
+import com.tangem.tap.common.extensions.dispatchWithMain
 import com.tangem.tap.common.extensions.onUserWalletSelected
 import com.tangem.tap.common.redux.AppState
-import com.tangem.tap.common.redux.navigation.AppScreen
-import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.domain.model.TotalFiatBalance
-import com.tangem.tap.domain.model.UserWallet
 import com.tangem.tap.domain.model.WalletStoreModel
-import com.tangem.tap.domain.model.builders.UserWalletBuilder
-import com.tangem.tap.domain.model.builders.UserWalletIdBuilder
-import com.tangem.tap.domain.scanCard.ScanCardProcessor
-import com.tangem.tap.features.onboarding.products.wallet.saltPay.message.SaltPayActivationError
-import com.tangem.tap.preferencesStorage
-import com.tangem.tap.scope
-import com.tangem.tap.store
-import com.tangem.tap.tangemSdkManager
-import com.tangem.tap.totalFiatBalanceCalculator
-import com.tangem.tap.userTokensRepository
-import com.tangem.tap.userWalletsListManager
-import com.tangem.tap.walletStoresManager
+import com.tangem.tap.domain.userWalletList.unlockIfLockable
+import com.tangem.tap.proxy.redux.DaggerGraphState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
@@ -62,7 +53,7 @@ internal class WalletSelectorMiddleware {
                 updateBalances(action.walletsStores, state)
             }
             is WalletSelectorAction.UnlockWithBiometry -> {
-                unlockWalletsWithBiometry()
+                unlockWallets()
             }
             is WalletSelectorAction.AddWallet -> {
                 addWallet()
@@ -78,6 +69,9 @@ internal class WalletSelectorMiddleware {
             }
             is WalletSelectorAction.ChangeAppCurrency -> {
                 refreshUserWalletsAmounts()
+            }
+            is WalletSelectorAction.ClearUserWallets -> {
+                clearUserWalletsAndCloseError()
             }
             is WalletSelectorAction.AddWallet.Success,
             is WalletSelectorAction.AddWallet.Error,
@@ -106,7 +100,7 @@ internal class WalletSelectorMiddleware {
     ) {
         if (updatedWalletStores.isNotEmpty()) {
             scope.launch(Dispatchers.Default) {
-                val updatedWallets = state.wallets.updateWalletStoresAndCalculateFiatBalance(updatedWalletStores)
+                val updatedWallets = state.wallets.calculateBalanceAndUpdateWalletStores(updatedWalletStores)
                 if (updatedWallets != state.wallets) {
                     store.dispatchOnMain(WalletSelectorAction.BalancesLoaded(updatedWallets))
                 }
@@ -114,11 +108,11 @@ internal class WalletSelectorMiddleware {
         }
     }
 
-    private fun unlockWalletsWithBiometry() {
+    private fun unlockWallets() {
         Analytics.send(MyWallets.Button.UnlockWithBiometrics())
 
         scope.launch {
-            userWalletsListManager.unlockWithBiometry()
+            userWalletsListManager.unlockIfLockable()
                 .doOnFailure { error ->
                     Timber.e(error, "Unable to unlock all user wallets")
                     store.dispatchOnMain(WalletSelectorAction.UnlockWithBiometry.Error(error))
@@ -132,15 +126,17 @@ internal class WalletSelectorMiddleware {
     private fun addWallet() = scope.launch {
         Analytics.send(MyWallets.Button.ScanNewCard())
 
-        val prevUseBiometricsForAccessCode = tangemSdkManager.useBiometricsForAccessCode()
+        val cardSdkConfigRepository = store.state.daggerGraphState.get(DaggerGraphState::cardSdkConfigRepository)
+
+        val prevUseBiometricsForAccessCode = cardSdkConfigRepository.isBiometricsRequestPolicy()
 
         // Update access code policy for access code saving when a card was scanned
-        tangemSdkManager.setAccessCodeRequestPolicy(
-            useBiometricsForAccessCode = preferencesStorage.shouldSaveAccessCodes,
+        cardSdkConfigRepository.setAccessCodeRequestPolicy(
+            isBiometricsRequestPolicy = preferencesStorage.shouldSaveAccessCodes,
         )
 
-        ScanCardProcessor.scan(
-            analyticsEvent = MyWallets.CardWasScanned(),
+        store.state.daggerGraphState.get(DaggerGraphState::scanCardProcessor).scan(
+            analyticsEvent = Basic.CardWasScanned(AnalyticsParam.ScannedFrom.MyWallets),
             onWalletNotCreated = {
                 // No need to rollback policy, continue with the policy set before the card scan
                 store.dispatchOnMain(WalletSelectorAction.AddWallet.Success)
@@ -153,24 +149,16 @@ internal class WalletSelectorMiddleware {
                 saveUserWalletAndPopBackToWalletScreen(scanResponse)
                     .doOnFailure { error ->
                         // Rollback policy if card saving was failed
-                        tangemSdkManager.setAccessCodeRequestPolicy(prevUseBiometricsForAccessCode)
+                        cardSdkConfigRepository.setAccessCodeRequestPolicy(prevUseBiometricsForAccessCode)
                         Timber.e(error, "Unable to save user wallet")
                         store.dispatchOnMain(WalletSelectorAction.AddWallet.Error(error))
                     }
             },
             onFailure = { error ->
                 // Rollback policy if card scanning was failed
-                tangemSdkManager.setAccessCodeRequestPolicy(prevUseBiometricsForAccessCode)
-                when {
-                    error is TangemSdkError.ExceptionError && error.cause is SaltPayActivationError -> {
-                        store.dispatchOnMain(WalletSelectorAction.AddWallet.Success)
-                        store.dispatchOnMain(NavigationAction.PopBackTo())
-                    }
-                    else -> {
-                        Timber.e(error, "Unable to scan card")
-                        store.dispatchOnMain(WalletSelectorAction.AddWallet.Error(error))
-                    }
-                }
+                cardSdkConfigRepository.setAccessCodeRequestPolicy(prevUseBiometricsForAccessCode)
+                Timber.e(error, "Unable to scan card")
+                store.dispatchOnMain(WalletSelectorAction.AddWallet.Error(error))
             },
         )
     }
@@ -194,7 +182,7 @@ internal class WalletSelectorMiddleware {
                     if (userWallet.isLocked) {
                         unlockUserWalletWithScannedCard(userWallet)
                     } else {
-                        userWalletsListManager.selectWallet(userWalletId)
+                        userWalletsListManager.select(userWalletId)
                     }
                 }
                 .doOnFailure { error ->
@@ -209,11 +197,11 @@ internal class WalletSelectorMiddleware {
                 .doOnSuccess {
                     val selectedUserWallet = userWalletsListManager.selectedUserWalletSync
                     if (selectedUserWallet != null) {
-                        val batchId = selectedUserWallet.scanResponse.card.batchId
-                        Analytics.addParamsInterceptor(BatchIdParamsInterceptor(batchId))
-
                         store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
-                        store.onUserWalletSelected(selectedUserWallet)
+                        store.onUserWalletSelected(
+                            userWallet = selectedUserWallet,
+                            sendAnalyticsEvent = true,
+                        )
                     }
                 }
         }
@@ -222,7 +210,7 @@ internal class WalletSelectorMiddleware {
     private suspend fun unlockUserWalletWithScannedCard(userWallet: UserWallet): CompletionResult<Unit> {
         Analytics.send(MyWallets.Button.WalletUnlockTapped())
         tangemSdkManager.changeDisplayedCardIdNumbersCount(userWallet.scanResponse)
-        return tangemSdkManager.scanProduct(userTokensRepository)
+        return store.state.daggerGraphState.get(DaggerGraphState::scanCardProcessor).scan()
             .map { scanResponse ->
                 val scannedUserWalletId = UserWalletIdBuilder.scanResponse(scanResponse).build()
                 if (scannedUserWalletId == userWallet.walletId) {
@@ -264,7 +252,7 @@ internal class WalletSelectorMiddleware {
 
         scope.launch {
             when (userWalletsIds.size) {
-                state.wallets.size -> clearUserWallets()
+                state.wallets.size -> clearUserWalletsAndPopBackToHomeScreen()
                 else -> deleteUserWallets(
                     userWalletsIds = userWalletsIds,
                     currentSelectedWalletId = state.selectedWalletId,
@@ -310,16 +298,33 @@ internal class WalletSelectorMiddleware {
         }
     }
 
+    private fun clearUserWalletsAndCloseError() = scope.launch {
+        clearUserWallets()
+            .doOnSuccess {
+                store.dispatchWithMain(WalletSelectorAction.CloseError)
+                popBackToHome()
+            }
+            .doOnFailure { e ->
+                Timber.e(e, "Unable to clear user wallets")
+            }
+    }
+
+    private suspend fun clearUserWalletsAndPopBackToHomeScreen(): CompletionResult<Unit> {
+        return clearUserWallets()
+            .doOnSuccess { popBackToHome() }
+    }
+
     private suspend fun clearUserWallets(): CompletionResult<Unit> {
         return userWalletsListManager.clear()
             .flatMap { walletStoresManager.clear() }
             .flatMap { tangemSdkManager.clearSavedUserCodes() }
-            .doOnSuccess {
-                // !!! Workaround !!!
-                store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
-                delay(timeMillis = 280)
-                store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Home))
-            }
+    }
+
+    private suspend fun popBackToHome() {
+        // !!! Workaround !!!
+        store.dispatchWithMain(NavigationAction.PopBackTo(AppScreen.Wallet))
+        delay(timeMillis = 280)
+        store.dispatchWithMain(NavigationAction.PopBackTo(AppScreen.Home))
     }
 
     private suspend fun deleteUserWallets(
@@ -337,7 +342,10 @@ internal class WalletSelectorMiddleware {
                         store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Welcome))
                     }
                     currentSelectedWalletId != selectedUserWallet.walletId -> {
-                        store.onUserWalletSelected(selectedUserWallet)
+                        store.onUserWalletSelected(
+                            userWallet = selectedUserWallet,
+                            sendAnalyticsEvent = true,
+                        )
                     }
                 }
             }
@@ -357,17 +365,17 @@ internal class WalletSelectorMiddleware {
         }
     }
 
-    private suspend fun List<UserWalletModel>.updateWalletStoresAndCalculateFiatBalance(
+    private suspend fun List<UserWalletModel>.calculateBalanceAndUpdateWalletStores(
         walletStores: Map<UserWalletId, List<WalletStoreModel>>,
     ): List<UserWalletModel> {
         return this
             .associateWith { walletStores[it.id] }
             .map { (wallet, walletStores) ->
-                wallet.updateWalletStoresAndCalculateFiatBalance(walletStores)
+                wallet.calculateBalanceAndUpdateWalletStores(walletStores)
             }
     }
 
-    private suspend fun UserWalletModel.updateWalletStoresAndCalculateFiatBalance(
+    private suspend fun UserWalletModel.calculateBalanceAndUpdateWalletStores(
         walletStores: List<WalletStoreModel>?,
     ): UserWalletModel {
         return this.copy(

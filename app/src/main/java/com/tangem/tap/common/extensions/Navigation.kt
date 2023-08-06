@@ -1,16 +1,15 @@
 package com.tangem.tap.common.extensions
 
 import android.os.Bundle
-import androidx.fragment.app.DialogFragment
-import androidx.fragment.app.Fragment
-import androidx.fragment.app.FragmentActivity
-import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.*
+import com.tangem.core.navigation.AppScreen
+import com.tangem.core.navigation.FragmentShareTransition
 import com.tangem.feature.referral.ReferralFragment
 import com.tangem.feature.swap.presentation.SwapFragment
-import com.tangem.tap.common.redux.navigation.AppScreen
-import com.tangem.tap.common.redux.navigation.FragmentShareTransition
+import com.tangem.tap.features.customtoken.legacy.AddCustomTokenFragment
 import com.tangem.tap.features.details.ui.appsettings.AppSettingsFragment
 import com.tangem.tap.features.details.ui.cardsettings.CardSettingsFragment
+import com.tangem.tap.features.details.ui.cardsettings.coderecovery.AccessCodeRecoveryFragment
 import com.tangem.tap.features.details.ui.details.DetailsFragment
 import com.tangem.tap.features.details.ui.resetcard.ResetCardFragment
 import com.tangem.tap.features.details.ui.securitymode.SecurityModeFragment
@@ -25,14 +24,16 @@ import com.tangem.tap.features.onboarding.products.wallet.ui.OnboardingWalletFra
 import com.tangem.tap.features.saveWallet.ui.SaveWalletBottomSheetFragment
 import com.tangem.tap.features.send.ui.SendFragment
 import com.tangem.tap.features.shop.ui.ShopFragment
-import com.tangem.tap.features.tokens.addCustomToken.AddCustomTokenFragment
-import com.tangem.tap.features.tokens.ui.AddTokensFragment
+import com.tangem.tap.features.tokens.impl.presentation.TokensListFragment
 import com.tangem.tap.features.wallet.ui.WalletDetailsFragment
 import com.tangem.tap.features.wallet.ui.WalletFragment
 import com.tangem.tap.features.walletSelector.ui.WalletSelectorBottomSheetFragment
 import com.tangem.tap.features.welcome.ui.WelcomeFragment
+import com.tangem.tap.proxy.redux.DaggerGraphState
+import com.tangem.tap.store
 import com.tangem.wallet.R
 import timber.log.Timber
+import com.tangem.tap.features.customtoken.impl.presentation.AddCustomTokenFragment as RedesignedAddCustomTokenFragment
 
 fun FragmentActivity.openFragment(
     screen: AppScreen,
@@ -40,24 +41,35 @@ fun FragmentActivity.openFragment(
     bundle: Bundle? = null,
     fgShareTransition: FragmentShareTransition? = null,
 ) {
-    val transaction = this.supportFragmentManager.beginTransaction()
-    val fragment = fragmentFactory(screen)
-    fragment.arguments = bundle
-    fgShareTransition?.apply {
-        fragment.sharedElementEnterTransition = enterTransitionSet
-        fragment.sharedElementReturnTransition = exitTransitionSet
-        transaction.setReorderingAllowed(true)
-        shareElements.forEach { shareElement ->
-            shareElement.wView.get()?.let { view ->
-                transaction.addSharedElement(view, shareElement.elementName)
+    val transaction = supportFragmentManager.beginTransaction().apply {
+        setReorderingAllowed(true)
+    }
+
+    val fragment = fragmentFactory(screen).apply {
+        arguments = bundle
+
+        if (fgShareTransition != null) {
+            sharedElementEnterTransition = fgShareTransition.enterTransitionSet
+            sharedElementReturnTransition = fgShareTransition.exitTransitionSet
+            fgShareTransition.shareElements.forEach { shareElement ->
+                shareElement.wView.get()?.let { view ->
+                    transaction.addSharedElement(view, shareElement.elementName)
+                }
             }
         }
     }
+
     if (screen.isDialogFragment) {
-        (fragment as DialogFragment).show(transaction, screen.name)
-        if (addToBackstack) {
-            transaction.addToBackStack(screen.name)
+        val dialogFragment = requireNotNull(fragment as? DialogFragment) {
+            "If screen.isDialogFragment == true then fragment must be a DialogFragment"
         }
+
+        dialogFragment.showAllowingStateLoss(
+            fragmentManager = supportFragmentManager,
+            baseTransaction = transaction,
+            tag = screen.name,
+            addToBackstack = addToBackstack,
+        )
     } else {
         transaction.replace(R.id.fragment_container, fragment, screen.name)
         if (addToBackstack) {
@@ -65,6 +77,29 @@ fun FragmentActivity.openFragment(
         }
         transaction.commitAllowingStateLoss()
     }
+}
+
+private fun DialogFragment.showAllowingStateLoss(
+    fragmentManager: FragmentManager,
+    baseTransaction: FragmentTransaction,
+    tag: String,
+    addToBackstack: Boolean,
+) {
+    runCatching {
+        if (addToBackstack) baseTransaction.addToBackStack(tag)
+        show(baseTransaction, tag)
+    }
+        .onFailure { throwable ->
+            if (throwable is IllegalStateException) {
+                val transaction = fragmentManager.beginTransaction()
+                transaction.add(this, tag)
+                if (addToBackstack) transaction.addToBackStack(tag)
+
+                transaction.commitAllowingStateLoss()
+            } else {
+                Timber.e(throwable)
+            }
+        }
 }
 
 fun FragmentActivity.popBackTo(screen: AppScreen?, inclusive: Boolean = false) {
@@ -99,17 +134,51 @@ private fun fragmentFactory(screen: AppScreen): Fragment {
         AppScreen.OnboardingWallet -> OnboardingWalletFragment()
         AppScreen.OnboardingTwins -> TwinsCardsFragment()
         AppScreen.OnboardingOther -> OnboardingOtherCardsFragment()
-        AppScreen.Wallet -> WalletFragment()
+        AppScreen.Wallet -> {
+            val featureToggles = store.state.daggerGraphState.get(
+                getDependency = DaggerGraphState::walletFeatureToggles,
+            )
+            if (featureToggles.isRedesignedScreenEnabled) {
+                store.state.daggerGraphState
+                    .get(getDependency = DaggerGraphState::walletRouter)
+                    .getEntryFragment()
+            } else {
+                WalletFragment()
+            }
+        }
         AppScreen.Send -> SendFragment()
         AppScreen.Details -> DetailsFragment()
         AppScreen.DetailsSecurity -> SecurityModeFragment()
         AppScreen.CardSettings -> CardSettingsFragment()
         AppScreen.AppSettings -> AppSettingsFragment()
         AppScreen.ResetToFactory -> ResetCardFragment()
+        AppScreen.AccessCodeRecovery -> AccessCodeRecoveryFragment()
         AppScreen.Disclaimer -> DisclaimerFragment()
-        AppScreen.AddTokens -> AddTokensFragment()
-        AppScreen.AddCustomToken -> AddCustomTokenFragment()
-        AppScreen.WalletDetails -> WalletDetailsFragment()
+        AppScreen.AddTokens -> TokensListFragment()
+
+        AppScreen.AddCustomToken -> {
+            val featureToggles = store.state.daggerGraphState.get(
+                getDependency = DaggerGraphState::customTokenFeatureToggles,
+            )
+            if (featureToggles.isRedesignedScreenEnabled) {
+                RedesignedAddCustomTokenFragment()
+            } else {
+                AddCustomTokenFragment()
+            }
+        }
+
+        AppScreen.WalletDetails -> {
+            val featureToggles = store.state.daggerGraphState.get(
+                getDependency = DaggerGraphState::tokenDetailsFeatureToggles,
+            )
+            if (featureToggles.isRedesignedScreenEnabled) {
+                store.state.daggerGraphState
+                    .get(getDependency = DaggerGraphState::tokenDetailsRouter)
+                    .getEntryFragment()
+            } else {
+                WalletDetailsFragment()
+            }
+        }
         AppScreen.WalletConnectSessions -> WalletConnectFragment()
         AppScreen.QrScan -> QrScanFragment()
         AppScreen.ReferralProgram -> ReferralFragment()

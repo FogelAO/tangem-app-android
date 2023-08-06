@@ -7,32 +7,14 @@ import com.tangem.tap.common.redux.global.GlobalState
 import com.tangem.tap.common.ui.SimpleAlertDialog
 import com.tangem.tap.common.ui.SimpleCancelableAlertDialog
 import com.tangem.tap.features.details.redux.walletconnect.WalletConnectDialog
-import com.tangem.tap.features.details.ui.walletconnect.dialogs.ApproveWcSessionDialog
-import com.tangem.tap.features.details.ui.walletconnect.dialogs.BnbTransactionDialog
-import com.tangem.tap.features.details.ui.walletconnect.dialogs.ChooseNetworkDialog
-import com.tangem.tap.features.details.ui.walletconnect.dialogs.ClipboardOrScanQrDialog
-import com.tangem.tap.features.details.ui.walletconnect.dialogs.PersonalSignDialog
-import com.tangem.tap.features.details.ui.walletconnect.dialogs.TransactionDialog
+import com.tangem.tap.features.details.ui.walletconnect.dialogs.*
 import com.tangem.tap.features.onboarding.AddressInfoBottomSheetDialog
 import com.tangem.tap.features.onboarding.OnboardingDialog
 import com.tangem.tap.features.onboarding.products.twins.ui.dialog.TwinningProcessNotCompletedDialog
 import com.tangem.tap.features.onboarding.products.wallet.redux.BackupDialog
-import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.InterruptOnboardingDialog
-import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.NoFundsForActivationDialog
-import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.PutVisaCardDialog
-import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.RegistrationErrorDialog
-import com.tangem.tap.features.onboarding.products.wallet.saltPay.dialog.SaltPayDialog
-import com.tangem.tap.features.onboarding.products.wallet.ui.dialogs.AddMoreBackupCardsDialog
-import com.tangem.tap.features.onboarding.products.wallet.ui.dialogs.BackupInProgressDialog
-import com.tangem.tap.features.onboarding.products.wallet.ui.dialogs.ConfirmDiscardingBackupDialog
-import com.tangem.tap.features.onboarding.products.wallet.ui.dialogs.UnfinishedBackupFoundDialog
+import com.tangem.tap.features.onboarding.products.wallet.ui.dialogs.*
 import com.tangem.tap.features.wallet.redux.models.WalletDialog
-import com.tangem.tap.features.wallet.ui.dialogs.AmountToSendBottomSheetDialog
-import com.tangem.tap.features.wallet.ui.dialogs.ChooseTradeActionBottomSheetDialog
-import com.tangem.tap.features.wallet.ui.dialogs.RussianCardholdersWarningBottomSheetDialog
-import com.tangem.tap.features.wallet.ui.dialogs.ScanFailsDialog
-import com.tangem.tap.features.wallet.ui.dialogs.SignedHashesWarningDialog
-import com.tangem.tap.features.wallet.ui.dialogs.SimpleOkDialog
+import com.tangem.tap.features.wallet.ui.dialogs.*
 import com.tangem.tap.features.wallet.ui.wallet.CurrencySelectionDialog
 import com.tangem.tap.store
 import com.tangem.wallet.R
@@ -111,29 +93,43 @@ class DialogManager : StoreSubscriber<GlobalState> {
                 ChooseNetworkDialog.create(state.dialog.session, state.dialog.networks, context)
             is WalletConnectDialog.ClipboardOrScanQr ->
                 ClipboardOrScanQrDialog.create(state.dialog.clipboardUri, context)
-            is WalletConnectDialog.RequestTransaction -> TransactionDialog.create(state.dialog.dialogData, context)
+            is WalletConnectDialog.RequestTransaction -> TransactionDialog.create(state.dialog.data, context)
             is WalletConnectDialog.PersonalSign -> PersonalSignDialog.create(state.dialog.data, context)
             is WalletConnectDialog.BnbTransactionDialog ->
                 BnbTransactionDialog.create(
-                    data = state.dialog.data,
-                    session = state.dialog.session,
-                    sessionId = state.dialog.sessionId,
-                    dAppName = state.dialog.dAppName,
+                    preparedData = state.dialog.data,
                     context = context,
                 )
-            is WalletConnectDialog.UnsupportedNetwork ->
+            is WalletConnectDialog.UnsupportedNetwork -> {
+                val warning = if (state.dialog.networks.isNullOrEmpty()) {
+                    context.getString(R.string.wallet_connect_scanner_error_unsupported_network)
+                } else {
+                    context.getString(R.string.wallet_connect_error_unsupported_blockchains) +
+                        state.dialog.networks
+                }
                 SimpleAlertDialog.create(
                     titleRes = R.string.wallet_connect_title,
-                    messageRes = R.string.wallet_connect_scanner_error_unsupported_network,
+                    message = warning,
                     context = context,
                 )
+            }
+            is WalletConnectDialog.SessionProposalDialog -> {
+                SessionProposalDialog.create(
+                    sessionProposal = state.dialog.sessionProposal,
+                    networks = state.dialog.networks,
+                    context = context,
+                    onApprove = state.dialog.onApprove,
+                    onReject = state.dialog.onReject,
+                )
+            }
             is BackupDialog.AddMoreBackupCards -> AddMoreBackupCardsDialog.create(context)
             is BackupDialog.BackupInProgress -> BackupInProgressDialog.create(context)
             is BackupDialog.UnfinishedBackupFound -> UnfinishedBackupFoundDialog.create(context)
             is BackupDialog.ConfirmDiscardingBackup -> ConfirmDiscardingBackupDialog.create(context)
-            is SaltPayDialog.Activation.NoGas -> NoFundsForActivationDialog.create(context)
-            is SaltPayDialog.Activation.PutVisaCard -> PutVisaCardDialog.create(context)
-            is SaltPayDialog.Activation.OnError -> RegistrationErrorDialog.create(context, state.dialog)
+            is BackupDialog.ResetBackupCard -> ResetBackupCardDialog.create(
+                context = context,
+                cardId = state.dialog.cardId,
+            )
             is WalletDialog.CurrencySelectionDialog -> CurrencySelectionDialog.create(state.dialog, context)
             is WalletDialog.ChooseTradeActionDialog -> ChooseTradeActionBottomSheetDialog(context, state.dialog)
             is WalletDialog.SelectAmountToSendDialog -> AmountToSendBottomSheetDialog(context, state.dialog)

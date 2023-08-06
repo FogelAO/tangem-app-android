@@ -2,29 +2,27 @@ package com.tangem.tap.features.wallet.redux.middlewares
 
 import com.tangem.blockchain.common.BlockchainSdkError
 import com.tangem.blockchain.common.SignatureCountValidator
-import com.tangem.blockchain.common.Wallet
 import com.tangem.blockchain.extensions.SimpleResult
 import com.tangem.common.card.FirmwareVersion
-import com.tangem.domain.common.CardDTO
-import com.tangem.domain.common.ScanResponse
 import com.tangem.domain.common.TapWorkarounds.isTestCard
+import com.tangem.domain.common.util.cardTypesResolver
+import com.tangem.domain.models.scan.CardDTO
+import com.tangem.domain.models.scan.ScanResponse
 import com.tangem.tap.common.extensions.dispatchOnMain
-import com.tangem.tap.common.extensions.isGreaterThan
 import com.tangem.tap.common.redux.global.GlobalState
 import com.tangem.tap.domain.configurable.warningMessage.WarningMessage
 import com.tangem.tap.domain.configurable.warningMessage.WarningMessagesManager
 import com.tangem.tap.domain.extensions.hasSignedHashes
 import com.tangem.tap.features.demo.isDemoCard
 import com.tangem.tap.features.wallet.redux.WalletAction
-import com.tangem.tap.network.NetworkConnectivity
 import com.tangem.tap.preferencesStorage
+import com.tangem.tap.proxy.redux.DaggerGraphState
 import com.tangem.tap.scope
 import com.tangem.tap.store
 import com.tangem.wallet.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.math.BigDecimal
 
 class WarningsMiddleware {
     fun handle(action: WalletAction.Warnings, globalState: GlobalState?) {
@@ -33,9 +31,10 @@ class WarningsMiddleware {
             is WalletAction.Warnings.CheckIfNeeded -> {
                 showCardWarningsIfNeeded(globalState)
                 val readyToShow = preferencesStorage.appRatingLaunchObserver.isReadyToShow()
-                if (readyToShow) addWarningMessage(WarningMessagesManager.appRatingWarning(), true)
+                if (readyToShow) addWarningMessage(warning = WarningMessagesManager.appRatingWarning, autoUpdate = true)
             }
-            is WalletAction.Warnings.CheckHashesCount.CheckHashesCountOnline -> checkHashesCountOnline()
+
+            is WalletAction.Warnings.CheckHashesCount.VerifyOnlineIfNeeded -> checkHashesCountOnlineIfNeeded()
             is WalletAction.Warnings.CheckHashesCount.SaveCardId -> {
                 val cardId = globalState?.scanResponse?.card?.cardId
                 cardId?.let { preferencesStorage.usedCardsPrefStorage.scanned(it) }
@@ -59,8 +58,6 @@ class WarningsMiddleware {
             }
             is WalletAction.Warnings.AppRating,
             is WalletAction.Warnings.CheckHashesCount,
-            is WalletAction.Warnings.CheckHashesCount.ConfirmHashesCount,
-            is WalletAction.Warnings.CheckHashesCount.NeedToCheckHashesCountOnline,
             is WalletAction.Warnings.Set,
             -> Unit
         }
@@ -71,15 +68,8 @@ class WarningsMiddleware {
             preferencesStorage.appRatingLaunchObserver.foundWalletWithFunds()
         }
         if (preferencesStorage.appRatingLaunchObserver.isReadyToShow()) {
-            addWarningMessage(WarningMessagesManager.appRatingWarning(), true)
+            addWarningMessage(WarningMessagesManager.appRatingWarning, true)
         }
-    }
-
-    fun tryToShowAppRatingWarning(wallet: Wallet) {
-        val nonZeroWalletsCount = wallet.amounts.filter {
-            it.value.value?.isGreaterThan(BigDecimal.ZERO) ?: false
-        }.size
-        tryToShowAppRatingWarning(hasNonZeroWallets = nonZeroWalletsCount > 0)
     }
 
     private fun showCardWarningsIfNeeded(globalState: GlobalState?) {
@@ -87,21 +77,21 @@ class WarningsMiddleware {
             val card = scanResponse.card
             globalState.warningManager?.removeWarnings(WarningMessage.Origin.Local)
             if (card.isTestCard) {
-                addWarningMessage(WarningMessagesManager.testCardWarning(), autoUpdate = true)
+                addWarningMessage(WarningMessagesManager.testCardWarning, autoUpdate = true)
                 return@let
             }
 
             showWarningLowRemainingSignaturesIfNeeded(card)
             if (card.firmwareVersion.type != FirmwareVersion.FirmwareType.Release) {
-                addWarningMessage(WarningMessagesManager.devCardWarning())
+                addWarningMessage(WarningMessagesManager.devCardWarning)
             } else if (!preferencesStorage.usedCardsPrefStorage.wasScanned(card.cardId)) {
                 checkIfWarningNeeded(scanResponse)?.let { warning -> addWarningMessage(warning) }
             }
             if (card.firmwareVersion.type == FirmwareVersion.FirmwareType.Release && !globalState.cardVerifiedOnline) {
-                addWarningMessage(WarningMessagesManager.onlineVerificationFailed())
+                addWarningMessage(WarningMessagesManager.onlineVerificationFailed)
             }
             if (scanResponse.isDemoCard()) {
-                addWarningMessage(WarningMessagesManager.demoCardWarning())
+                addWarningMessage(WarningMessagesManager.demoCardWarning)
             }
             setWarningMessages()
         }
@@ -116,38 +106,34 @@ class WarningsMiddleware {
         }
     }
 
-    private fun checkIfWarningNeeded(
-        scanResponse: ScanResponse,
-    ): WarningMessage? {
+    private fun checkIfWarningNeeded(scanResponse: ScanResponse): WarningMessage? {
         if (scanResponse.cardTypesResolver.isTangemTwins() || scanResponse.isDemoCard()) return null
 
         if (scanResponse.cardTypesResolver.isMultiwalletAllowed()) {
             val isBackupForbidden = with(scanResponse.card.settings) { !(isBackupAllowed || isHDWalletAllowed) }
             return if (scanResponse.card.hasSignedHashes() && isBackupForbidden) {
-                WarningMessagesManager.signedHashesMultiWalletWarning()
+                WarningMessagesManager.signedHashesMultiWalletWarning
             } else {
                 store.dispatch(WalletAction.Warnings.CheckHashesCount.SaveCardId)
                 null
             }
         }
 
-        val validator = store.state.walletState.walletManagers.firstOrNull() as? SignatureCountValidator
-        return if (validator == null) {
-            if (scanResponse.card.hasSignedHashes()) {
-                WarningMessagesManager.alreadySignedHashesWarning()
-            } else {
-                store.dispatch(WalletAction.Warnings.CheckHashesCount.SaveCardId)
-                null
-            }
+        return if (scanResponse.card.hasSignedHashes()) {
+            WarningMessagesManager.alreadySignedHashesWarning
         } else {
-            store.dispatch(WalletAction.Warnings.CheckHashesCount.NeedToCheckHashesCountOnline)
+            store.dispatch(WalletAction.Warnings.CheckHashesCount.SaveCardId)
             null
         }
     }
 
-    private fun checkHashesCountOnline() {
-        if (store.state.walletState.hashesCountVerified != false) return
-        if (!NetworkConnectivity.getInstance().isOnlineOrConnecting()) return
+    private fun checkHashesCountOnlineIfNeeded() {
+        val alreadySignedHashesWarning = WarningMessagesManager.alreadySignedHashesWarning
+        val manager = store.state.globalState.warningManager ?: return
+        if (manager.containsWarning(alreadySignedHashesWarning)) return
+
+        val networkConnectionManager = store.state.daggerGraphState.get(DaggerGraphState::networkConnectionManager)
+        if (!networkConnectionManager.isOnline) return
 
         val scanResponse = store.state.globalState.scanResponse
         val card = scanResponse?.card
@@ -165,14 +151,13 @@ class WarningsMiddleware {
             withContext(Dispatchers.Main) {
                 when (result) {
                     SimpleResult.Success -> {
-                        store.dispatch(WalletAction.Warnings.CheckHashesCount.ConfirmHashesCount)
                         store.dispatch(WalletAction.Warnings.CheckHashesCount.SaveCardId)
                     }
                     is SimpleResult.Failure ->
                         if (result.error is BlockchainSdkError.SignatureCountNotMatched) {
-                            addWarningMessage(WarningMessagesManager.alreadySignedHashesWarning(), true)
+                            addWarningMessage(alreadySignedHashesWarning, true)
                         } else if (signedHashes > 0) {
-                            addWarningMessage(WarningMessagesManager.alreadySignedHashesWarning(), true)
+                            addWarningMessage(alreadySignedHashesWarning, true)
                         }
                     null -> Unit
                 }

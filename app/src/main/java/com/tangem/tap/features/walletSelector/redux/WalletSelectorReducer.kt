@@ -1,16 +1,19 @@
 package com.tangem.tap.features.walletSelector.redux
 
-import com.tangem.domain.common.CardDTO
+import com.tangem.domain.common.util.cardTypesResolver
+import com.tangem.domain.models.scan.CardDTO
+import com.tangem.domain.wallets.models.UserWallet
 import com.tangem.tap.common.redux.AppState
 import com.tangem.tap.domain.model.TotalFiatBalance
-import com.tangem.tap.domain.model.UserWallet
 import org.rekotlin.Action
 
 internal object WalletSelectorReducer {
     fun reduce(action: Action, state: AppState): WalletSelectorState {
         return if (action is WalletSelectorAction) {
             internalReduce(action, state.walletSelectorState)
-        } else state.walletSelectorState
+        } else {
+            state.walletSelectorState
+        }
     }
 
     @Suppress("ComplexMethod")
@@ -56,6 +59,7 @@ internal object WalletSelectorReducer {
             is WalletSelectorAction.SelectWallet,
             is WalletSelectorAction.RemoveWallets,
             is WalletSelectorAction.RenameWallet,
+            is WalletSelectorAction.ClearUserWallets,
             -> state
         }
     }

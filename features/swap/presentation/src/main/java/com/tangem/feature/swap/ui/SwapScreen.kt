@@ -1,10 +1,13 @@
 package com.tangem.feature.swap.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.ModalBottomSheetLayout
+import androidx.compose.material.ModalBottomSheetState
 import androidx.compose.material.ModalBottomSheetValue
 import androidx.compose.material.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -14,6 +17,7 @@ import androidx.compose.ui.Modifier
 import com.tangem.core.ui.res.TangemTheme
 import com.tangem.feature.swap.models.SwapPermissionState
 import com.tangem.feature.swap.models.SwapStateHolder
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterialApi::class)
@@ -24,18 +28,25 @@ internal fun SwapScreen(stateHolder: SwapStateHolder) {
         initialValue = ModalBottomSheetValue.Hidden,
         skipHalfExpanded = true,
     )
+    BackHandler(
+        onBack = {
+            if (bottomSheetState.isVisible) {
+                hideBottomSheet(coroutineScope, stateHolder, bottomSheetState)
+            } else {
+                stateHolder.onBackClicked()
+            }
+        },
+    )
 
     TangemTheme {
         ModalBottomSheetLayout(
+            modifier = Modifier.systemBarsPadding(),
             sheetContent = {
                 if (stateHolder.permissionState is SwapPermissionState.ReadyForRequest) {
                     SwapPermissionBottomSheetContent(
                         data = stateHolder.permissionState,
                         onCancel = {
-                            coroutineScope.launch {
-                                stateHolder.onCancelPermissionBottomSheet.invoke()
-                                bottomSheetState.hide()
-                            }
+                            hideBottomSheet(coroutineScope, stateHolder, bottomSheetState)
                         },
                     )
                 } else {
@@ -71,5 +82,17 @@ internal fun SwapScreen(stateHolder: SwapStateHolder) {
                 )
             },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterialApi::class)
+private fun hideBottomSheet(
+    coroutineScope: CoroutineScope,
+    stateHolder: SwapStateHolder,
+    bottomSheetState: ModalBottomSheetState,
+) {
+    coroutineScope.launch {
+        stateHolder.onCancelPermissionBottomSheet.invoke()
+        bottomSheetState.hide()
     }
 }

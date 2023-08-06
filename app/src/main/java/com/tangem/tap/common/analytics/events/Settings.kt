@@ -1,6 +1,6 @@
 package com.tangem.tap.common.analytics.events
 
-import com.tangem.core.analytics.AnalyticsEvent
+import com.tangem.core.analytics.models.AnalyticsEvent
 import com.tangem.tap.features.details.ui.details.SocialNetwork
 
 /**
@@ -53,23 +53,30 @@ sealed class Settings(
             params = mapOf("Mode" to mode.value),
             error = error,
         )
+
+        class AccessCodeRecoveryButton : CardSettings("Button - Access Code Recovery")
+
+        class AccessCodeRecoveryChanged(status: AnalyticsParam.AccessCodeRecoveryStatus) : CardSettings(
+            event = "Access Code Recovery Changed",
+            params = mapOf(status.key to status.value),
+        )
     }
 
     sealed class AppSettings(
         event: String,
         params: Map<String, String> = mapOf(),
-    ) : Settings("Settings / App Settings", event, params) {
+    ) : Settings(category = "Settings / App Settings", event = event, params = params) {
 
-        class SaveWalletSwitcherChanged(state: AnalyticsParam.OnOffState) : CardSettings(
+        class SaveWalletSwitcherChanged(state: AnalyticsParam.OnOffState) : AppSettings(
             event = "Save Wallet Switcher Changed",
             params = mapOf("State" to state.value),
         )
 
-        class SaveAccessCodeSwitcherChanged(state: AnalyticsParam.OnOffState) : CardSettings(
+        class SaveAccessCodeSwitcherChanged(state: AnalyticsParam.OnOffState) : AppSettings(
             event = "Save Access Code Switcher Changed",
             params = mapOf("State" to state.value),
         )
 
-        object ButtonEnableBiometricAuthentication : AppSettings("Button - Enable Biometric Authentication")
+        object ButtonEnableBiometricAuthentication : AppSettings(event = "Button - Enable Biometric Authentication")
     }
 }

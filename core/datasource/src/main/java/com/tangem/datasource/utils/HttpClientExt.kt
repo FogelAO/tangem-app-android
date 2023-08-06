@@ -1,10 +1,9 @@
 package com.tangem.datasource.utils
 
 import com.tangem.datasource.BuildConfig
+import com.tangem.datasource.api.common.createNetworkLoggingInterceptor
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
-import okhttp3.logging.HttpLoggingInterceptor.Level
 
 /** Extension for adding headers [requestHeaders] to every [OkHttpClient] request */
 internal fun OkHttpClient.Builder.addHeaders(vararg requestHeaders: RequestHeader): OkHttpClient.Builder {
@@ -13,7 +12,7 @@ internal fun OkHttpClient.Builder.addHeaders(vararg requestHeaders: RequestHeade
             val request = chain.request().newBuilder().apply {
                 requestHeaders
                     .flatMap(RequestHeader::values)
-                    .forEach { addHeader(it.first, it.second) }
+                    .forEach { addHeader(it.first, it.second.invoke()) }
             }.build()
 
             chain.proceed(request)
@@ -26,5 +25,10 @@ internal fun OkHttpClient.Builder.addHeaders(vararg requestHeaders: RequestHeade
  *
  * @param level logging level. By default, only the request body.
  */
-internal fun OkHttpClient.Builder.allowLogging(level: Level = Level.BODY): OkHttpClient.Builder =
-    if (BuildConfig.DEBUG) addInterceptor(interceptor = HttpLoggingInterceptor().setLevel(level)) else this
+internal fun OkHttpClient.Builder.allowLogging(): OkHttpClient.Builder {
+    return if (BuildConfig.DEBUG) {
+        addInterceptor(interceptor = createNetworkLoggingInterceptor())
+    } else {
+        this
+    }
+}

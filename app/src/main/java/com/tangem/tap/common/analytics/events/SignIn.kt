@@ -1,6 +1,6 @@
 package com.tangem.tap.common.analytics.events
 
-import com.tangem.core.analytics.AnalyticsEvent
+import com.tangem.core.analytics.models.AnalyticsEvent
 
 /**
  * Created by Anton Zhilenkov on 23.01.2023.
@@ -12,7 +12,6 @@ sealed class SignIn(
 ) : AnalyticsEvent("Sign In", event, params, error) {
 
     class ScreenOpened : SignIn(event = "Sing In Screen Opened")
-    class CardWasScanned : SignIn(event = "Card Was Scanned")
 
     class ButtonBiometricSignIn : SignIn(event = "Button - Biometric Sign In")
     class ButtonCardSignIn : SignIn(event = "Button - Card Sign In")

@@ -1,5 +1,10 @@
 package com.tangem.feature.swap.models
 
+import androidx.compose.ui.text.input.TextFieldValue
+import com.tangem.core.ui.components.states.Item
+import com.tangem.core.ui.components.states.SelectableItemsState
+import com.tangem.feature.swap.domain.models.ui.TxFee
+
 data class SwapStateHolder(
     val sendCardData: SwapCardData,
     val receiveCardData: SwapCardData,
@@ -20,6 +25,7 @@ data class SwapStateHolder(
     val onRefresh: () -> Unit,
     val onBackClicked: () -> Unit,
     val onChangeCardsClicked: () -> Unit,
+    val onSearchFocusChange: (Boolean) -> Unit,
     val onSelectTokenClick: (() -> Unit)? = null,
     val onSuccess: (() -> Unit)? = null,
     val onMaxAmountSelected: (() -> Unit)? = null,
@@ -29,9 +35,9 @@ data class SwapStateHolder(
 
 data class SwapCardData(
     val type: TransactionCardType,
-    val amount: String?,
     val amountEquivalent: String?,
     val coinId: String?,
+    val amountTextFieldValue: TextFieldValue?,
     val tokenIconUrl: String,
     val tokenCurrency: String,
     val balance: String,
@@ -45,17 +51,27 @@ data class SwapButton(
     val onClick: () -> Unit,
 )
 
-sealed interface FeeState {
+sealed class FeeState(open val tangemFee: Double) {
 
-    object Empty : FeeState
+    object Empty : FeeState(0.0)
 
     data class Loaded(
-        val fee: String = "",
-    ) : FeeState
+        override val tangemFee: Double,
+        override val state: SelectableItemsState<TxFee>?,
+        val onSelectItem: (Item<TxFee>) -> Unit,
+    ) : FeeState(tangemFee), FeeSelectState
 
-    object Loading : FeeState
+    object Loading : FeeState(0.0)
 
-    data class NotEnoughFundsWarning(val fee: String) : FeeState
+    data class NotEnoughFundsWarning(
+        override val tangemFee: Double,
+        override val state: SelectableItemsState<TxFee>?,
+        val onSelectItem: (Item<TxFee>) -> Unit,
+    ) : FeeState(tangemFee), FeeSelectState
+}
+
+sealed interface FeeSelectState {
+    val state: SelectableItemsState<TxFee>?
 }
 
 sealed interface TransactionCardType {
@@ -73,7 +89,21 @@ sealed interface TransactionCardType {
 sealed interface SwapWarning {
     data class PermissionNeeded(val tokenCurrency: String) : SwapWarning
     object InsufficientFunds : SwapWarning
-    data class GenericWarning(val message: String?, val onClick: () -> Unit) : SwapWarning
+    data class GenericWarning(
+        val message: String? = null,
+        val type: GenericWarningType = GenericWarningType.OTHER,
+        val shouldWrapMessage: Boolean = false,
+        val onClick: () -> Unit,
+    ) : SwapWarning
     // data class RateExpired(val onClick: () -> Unit) : SwapWarning
-    // object HighPriceImpact : SwapWarning
+    /**
+     * High price impact warning
+     *
+     * @property priceImpact in format = 10 (means 10%)
+     */
+    data class HighPriceImpact(val priceImpact: Int) : SwapWarning
+}
+
+enum class GenericWarningType {
+    NETWORK, OTHER
 }

@@ -1,6 +1,5 @@
 package com.tangem.tap.features.wallet.ui
 
-import android.content.Context
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuInflater
@@ -8,8 +7,13 @@ import android.view.MenuItem
 import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -17,19 +21,25 @@ import androidx.transition.TransitionInflater
 import by.kirich1409.viewbindingdelegate.viewBinding
 import coil.load
 import coil.size.Scale
+import com.badoo.mvicore.modelWatcher
 import com.tangem.core.analytics.Analytics
+import com.tangem.core.navigation.AppScreen
+import com.tangem.core.navigation.NavigationAction
 import com.tangem.core.ui.fragments.setStatusBarColor
+import com.tangem.core.ui.res.TangemTheme
 import com.tangem.core.ui.utils.OneTouchClickListener
-import com.tangem.domain.common.TapWorkarounds.isSaltPay
+import com.tangem.datasource.connection.NetworkConnectionManager
+import com.tangem.feature.learn2earn.presentation.Learn2earnViewModel
+import com.tangem.feature.learn2earn.presentation.ui.Learn2earnMainPageScreen
+import com.tangem.feature.swap.api.SwapFeatureToggleManager
 import com.tangem.feature.swap.domain.SwapInteractor
 import com.tangem.tap.MainActivity
-import com.tangem.tap.common.analytics.events.MainScreen
 import com.tangem.tap.common.analytics.events.Portfolio
+import com.tangem.tap.common.extensions.beginDelayedTransition
 import com.tangem.tap.common.extensions.show
 import com.tangem.tap.common.recyclerView.SpaceItemDecoration
 import com.tangem.tap.common.redux.global.GlobalAction
-import com.tangem.tap.common.redux.navigation.AppScreen
-import com.tangem.tap.common.redux.navigation.NavigationAction
+import com.tangem.tap.common.utils.SafeStoreSubscriber
 import com.tangem.tap.domain.configurable.warningMessage.WarningMessage
 import com.tangem.tap.domain.statePrinter.printScanResponseState
 import com.tangem.tap.domain.statePrinter.printWalletState
@@ -40,23 +50,28 @@ import com.tangem.tap.features.wallet.redux.WalletAction
 import com.tangem.tap.features.wallet.redux.WalletState
 import com.tangem.tap.features.wallet.ui.adapters.WarningMessagesAdapter
 import com.tangem.tap.features.wallet.ui.wallet.MultiWalletView
-import com.tangem.tap.features.wallet.ui.wallet.SaltPaySingleWalletView
 import com.tangem.tap.features.wallet.ui.wallet.SingleWalletView
 import com.tangem.tap.features.wallet.ui.wallet.WalletView
 import com.tangem.tap.store
-import com.tangem.tap.userWalletsListManager
 import com.tangem.wallet.BuildConfig
 import com.tangem.wallet.R
 import com.tangem.wallet.databinding.FragmentWalletBinding
 import dagger.hilt.android.AndroidEntryPoint
-import org.rekotlin.StoreSubscriber
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<WalletState> {
+class WalletFragment : Fragment(R.layout.fragment_wallet), SafeStoreSubscriber<WalletState> {
 
     @Inject
     lateinit var swapInteractor: SwapInteractor
+
+    @Inject
+    lateinit var swapFeatureToggleManager: SwapFeatureToggleManager
+
+    @Inject
+    lateinit var networkConnectionManager: NetworkConnectionManager
 
     private lateinit var warningsAdapter: WarningMessagesAdapter
 
@@ -64,43 +79,45 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
 
     private var walletView: WalletView = MultiWalletView()
 
+    private val learn2earnViewModel by activityViewModels<Learn2earnViewModel>()
     private val viewModel by viewModels<WalletViewModel>()
 
-    override fun onAttach(context: Context) {
-        super.onAttach(context)
-        activity?.lifecycleScope?.launchWhenCreated {
-            viewModel.launch()
+    private val totalBalanceWatcher = modelWatcher {
+        (WalletState::totalBalance) { totalBalance ->
+            totalBalance?.let {
+                viewModel.onBalanceLoaded(totalBalance)
+                store.state.globalState.topUpController?.totalBalanceStateChanged(it)
+            }
         }
     }
+
+    private val isNetworkConnectionError = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setHasOptionsMenu(true)
+        activity?.lifecycle?.addObserver(viewModel)
 
-        Analytics.send(MainScreen.ScreenOpened())
         activity?.onBackPressedDispatcher?.addCallback(
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    val popBackTo = if (userWalletsListManager.hasSavedUserWallets) {
-                        userWalletsListManager.lock()
-                        AppScreen.Welcome
-                    } else {
-                        AppScreen.Home
-                    }
-                    store.dispatch(NavigationAction.PopBackTo(popBackTo))
+                    store.dispatch(WalletAction.PopBackToInitialScreen)
                 }
             },
         )
         val inflater = TransitionInflater.from(requireContext())
         enterTransition = inflater.inflateTransition(R.transition.slide_right)
         exitTransition = inflater.inflateTransition(R.transition.fade)
+        learn2earnViewModel.onMainScreenCreated()
     }
 
     override fun onStart() {
         super.onStart()
 
         setStatusBarColor(R.color.background_secondary)
+
+        subscribeOnNetworkStateChanging()
 
         store.subscribe(this) { state ->
             state.select { it.walletState }
@@ -152,29 +169,26 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
     }
 
     @Suppress("ComplexMethod")
-    override fun newState(state: WalletState) {
+    override fun newStateOnMain(state: WalletState) {
         if (activity == null || view == null) return
 
-        val isSaltPay = store.state.globalState.scanResponse?.card?.isSaltPay == true
-
         when {
-            isSaltPay && walletView !is SaltPaySingleWalletView -> {
-                walletView = SaltPaySingleWalletView()
-                walletView.changeWalletView(this, binding)
-            }
-            state.isMultiwalletAllowed && state.primaryWallet?.currencyData?.status != BalanceStatus.EmptyCard &&
-                walletView !is MultiWalletView -> {
+            state.isMultiwalletAllowed && walletView !is MultiWalletView -> {
+                walletView.onViewDestroy()
                 walletView = MultiWalletView()
                 walletView.changeWalletView(this, binding)
             }
-            !state.isMultiwalletAllowed && !isSaltPay && walletView !is SingleWalletView -> {
+            !state.isMultiwalletAllowed && walletView !is SingleWalletView -> {
+                walletView.onViewDestroy()
                 walletView = SingleWalletView()
                 walletView.changeWalletView(this, binding)
             }
             else -> {} // we keep the same view unless we scan a card that requires a different view
         }
+        totalBalanceWatcher.invoke(state)
 
         walletView.swapInteractor = swapInteractor
+        walletView.swapFeatureToggleManager = swapFeatureToggleManager
 
         walletView.onNewState(state)
 
@@ -184,23 +198,77 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
             binding.toolbar.inflateMenu(R.menu.menu_wallet)
         }
 
-        setupNoInternetHandling(state)
         setupCardImage(state)
 
-        if (!isSaltPay) showWarningsIfPresent(state.mainWarningsList)
+        showWarningsIfPresent(state.mainWarningsList)
 
-        binding.srlWallet.isRefreshing = state.state == ProgressState.Refreshing
-        binding.srlWallet.setOnRefreshListener {
-            if (state.state != ProgressState.Loading &&
-                state.state != ProgressState.Refreshing
-            ) {
-                Analytics.send(Portfolio.Refreshed())
-                store.dispatch(WalletAction.LoadData.Refresh)
+        setupPullToRefreshLayout(state)
+
+        binding.toolbar.setNavigationIcon(
+            if (state.canSaveUserWallets) R.drawable.ic_wallet_24 else R.drawable.ic_tap_card_24,
+        )
+
+        showLearn2earnView()
+    }
+
+    private fun showLearn2earnView() {
+        val isShowing = learn2earnViewModel.uiState.mainScreenState.isVisible
+        if (!isShowing) return
+
+        binding.composeLearnToEarnContainer.show(true) { binding.llWarnings.beginDelayedTransition() }
+        binding.composeLearnToEarnContainer.apply {
+            setViewCompositionStrategy(
+                strategy = ViewCompositionStrategy.DisposeOnLifecycleDestroyed(
+                    lifecycle = this@WalletFragment.lifecycle,
+                ),
+            )
+            setContent {
+                TangemTheme {
+                    Learn2earnMainPageScreen(learn2earnViewModel.uiState)
+                }
             }
         }
+    }
 
-        val navigationIconRes = if (state.hasSavedWallets) R.drawable.ic_wallet_24 else R.drawable.ic_tap_card_24
-        binding.toolbar.setNavigationIcon(navigationIconRes)
+    private fun setupPullToRefreshLayout(state: WalletState) {
+        setupErrorPullToRefreshState(state)
+
+        binding.pullToRefreshLayout.isRefreshing = state.state == ProgressState.Refreshing
+
+        binding.pullToRefreshLayout.setOnRefreshListener {
+            if (state.state != ProgressState.Loading && state.state != ProgressState.Refreshing) {
+                refreshWalletData()
+            }
+        }
+    }
+
+    private fun setupErrorPullToRefreshState(state: WalletState) {
+        if (state.state == ProgressState.Error) {
+            when (state.error) {
+                ErrorType.NoInternetConnection -> {
+                    isNetworkConnectionError.value = true
+                    binding.pullToRefreshLayout.isRefreshing = false
+
+                    (activity as? MainActivity)?.showSnackbar(
+                        text = R.string.wallet_notification_no_internet,
+                        buttonTitle = R.string.common_retry,
+                    )
+                    // because was added logic of autoupdate mainscreen data, remove retry
+                    // TODO("remove comment after release 4.6")
+                    // { store.dispatch(WalletAction.LoadData) }
+                }
+                else -> isNetworkConnectionError.value = false
+            }
+        } else {
+            isNetworkConnectionError.value = false
+            (activity as? MainActivity)?.dismissSnackbar()
+        }
+    }
+
+    private fun refreshWalletData() {
+        Analytics.send(Portfolio.Refreshed())
+        store.dispatch(WalletAction.LoadData.Refresh)
+        learn2earnViewModel.onMainScreenRefreshed()
     }
 
     private fun showWarningsIfPresent(warnings: List<WarningMessage>) {
@@ -208,38 +276,36 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
         binding.rvWarningMessages.show(warnings.isNotEmpty())
     }
 
-    private fun setupNoInternetHandling(state: WalletState) {
-        if (state.state == ProgressState.Error) {
-            if (state.error == ErrorType.NoInternetConnection) {
-                binding.srlWallet.isRefreshing = false
-                (activity as? MainActivity)?.showSnackbar(
-                    text = R.string.wallet_notification_no_internet,
-                    buttonTitle = R.string.common_retry,
-                ) { store.dispatch(WalletAction.LoadData) }
-            }
-        } else {
-            (activity as? MainActivity)?.dismissSnackbar()
+    private fun setupCardImage(state: WalletState) {
+        binding.ivCard.load(state.cardImage?.artworkId) {
+            scale(Scale.FIT)
+            crossfade(enable = true)
+            placeholder(R.drawable.card_placeholder_black)
+            error(R.drawable.card_placeholder_black)
+            fallback(R.drawable.card_placeholder_black)
         }
     }
 
-    private fun setupCardImage(state: WalletState) {
-        // TODO: SaltPay: remove hardCode
-        if (store.state.globalState.scanResponse?.cardTypesResolver?.isSaltPay() == true) {
-            binding.ivCard.load(R.drawable.img_salt_pay_visa) {
-                scale(Scale.FIT)
-                crossfade(enable = true)
-                placeholder(R.drawable.card_placeholder_black)
-                error(R.drawable.card_placeholder_black)
-                fallback(R.drawable.card_placeholder_black)
-            }
-        } else {
-            binding.ivCard.load(state.cardImage?.artworkId) {
-                scale(Scale.FIT)
-                crossfade(enable = true)
-                placeholder(R.drawable.card_placeholder_black)
-                error(R.drawable.card_placeholder_black)
-                fallback(R.drawable.card_placeholder_black)
-            }
+    private fun subscribeOnNetworkStateChanging() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            networkConnectionManager.isOnlineFlow
+                .flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
+                .distinctUntilChanged()
+                .collect { isOnline ->
+                    if (isOnline) {
+                        (activity as? MainActivity)?.dismissSnackbar()
+                    } else {
+                        isNetworkConnectionError.value = true
+                        binding.pullToRefreshLayout.isRefreshing = false
+                        (activity as? MainActivity)?.showSnackbar(
+                            text = R.string.wallet_notification_no_internet,
+                            buttonTitle = R.string.common_retry,
+                        )
+                    }
+                    if (isOnline && isNetworkConnectionError.value) {
+                        refreshWalletData()
+                    }
+                }
         }
     }
 
@@ -247,10 +313,10 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
         return when (item.itemId) {
             R.id.details_menu -> {
                 store.dispatch(GlobalAction.UpdateFeedbackInfo(store.state.walletState.walletManagers))
-                store.state.globalState.scanResponse?.let { scanNoteResponse ->
+                store.state.globalState.scanResponse?.let { scanResponse ->
                     store.dispatch(
                         DetailsAction.PrepareScreen(
-                            scanResponse = scanNoteResponse,
+                            scanResponse = scanResponse,
                             wallets = store.state.walletState.walletManagers.map { it.wallet },
                         ),
                     )
@@ -263,6 +329,14 @@ class WalletFragment : Fragment(R.layout.fragment_wallet), StoreSubscriber<Walle
         }
     }
 
+    @Deprecated(
+        message = "Deprecated in Java",
+        replaceWith = ReplaceWith(
+            "if (store.state.walletState.shouldShowDetails) inflater.inflate(R.menu.menu_wallet, menu)",
+            "com.tangem.tap.store",
+            "com.tangem.wallet.R",
+        ),
+    )
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
         if (store.state.walletState.shouldShowDetails) inflater.inflate(R.menu.menu_wallet, menu)
     }

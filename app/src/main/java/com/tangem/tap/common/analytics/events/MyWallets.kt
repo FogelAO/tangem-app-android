@@ -1,6 +1,6 @@
 package com.tangem.tap.common.analytics.events
 
-import com.tangem.core.analytics.AnalyticsEvent
+import com.tangem.core.analytics.models.AnalyticsEvent
 
 sealed class MyWallets(
     event: String,
@@ -8,7 +8,6 @@ sealed class MyWallets(
 ) : AnalyticsEvent("My Wallets", event, params) {
 
     class MyWalletsScreenOpened : MyWallets(event = "My Wallets Screen Opened")
-    class CardWasScanned : MyWallets(event = "Card Was Scanned")
 
     sealed class Button {
         class ScanNewCard : MyWallets(event = "Button - Scan New Card")

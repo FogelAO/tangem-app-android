@@ -11,9 +11,10 @@ import androidx.activity.OnBackPressedCallback
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.fragment.app.Fragment
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.Result
 import com.otaliastudios.cameraview.CameraView
-import com.tangem.tap.common.redux.navigation.NavigationAction
+import com.tangem.core.navigation.NavigationAction
 import com.tangem.tap.features.details.redux.walletconnect.WalletConnectAction
 import com.tangem.tap.store
 import me.dm7.barcodescanner.zxing.ZXingScannerView
@@ -24,28 +25,25 @@ class QrScanFragment : Fragment(0), ZXingScannerView.ResultHandler {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        activity?.window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
-        activity?.onBackPressedDispatcher?.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                store.dispatch(NavigationAction.PopBackTo())
-            }
-        })
+        setFitSystemWindows(fit = true)
+        activity?.onBackPressedDispatcher?.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    store.dispatch(NavigationAction.PopBackTo())
+                }
+            },
+        )
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View? {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         if (!permissionIsGranted()) requestPermission()
 
-        scannerView = ZXingScannerView(activity)
-        return scannerView
-    }
+        scannerView = ZXingScannerView(activity).apply {
+            setFormats(listOf(BarcodeFormat.QR_CODE))
+        }
 
-    override fun onPause() {
-        super.onPause()
-        scannerView?.stopCamera()
+        return scannerView
     }
 
     override fun onResume() {
@@ -54,19 +52,25 @@ class QrScanFragment : Fragment(0), ZXingScannerView.ResultHandler {
         scannerView?.startCamera()
     }
 
+    override fun onPause() {
+        super.onPause()
+        scannerView?.stopCamera()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        setFitSystemWindows(fit = false)
+    }
+
     override fun handleResult(result: Result) {
         store.dispatch(NavigationAction.PopBackTo())
-        activity?.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
+        setFitSystemWindows(fit = false)
         if (!result.text.isNullOrBlank()) {
             store.dispatch(WalletConnectAction.OpenSession(result.text))
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         if (requestCode != CameraView.PERMISSION_REQUEST_CODE) return
 
         if (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
@@ -87,5 +91,11 @@ class QrScanFragment : Fragment(0), ZXingScannerView.ResultHandler {
 
     private fun requestPermission() {
         requestPermissions(arrayOf(Manifest.permission.CAMERA), CameraView.PERMISSION_REQUEST_CODE)
+    }
+
+    private fun setFitSystemWindows(fit: Boolean) {
+        activity?.window?.let {
+            WindowCompat.setDecorFitsSystemWindows(it, fit)
+        }
     }
 }

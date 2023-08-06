@@ -4,12 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -38,8 +33,8 @@ fun StoriesProgressBar(
                 targetValue = 1f,
                 animationSpec = tween(
                     durationMillis = (stepDuration * (1f - progress.value)).toInt(),
-                    easing = LinearEasing
-                )
+                    easing = LinearEasing,
+                ),
             )
             progress.snapTo(0f)
             onStepFinish()
@@ -52,12 +47,12 @@ fun StoriesProgressBar(
 //            .height()
             .padding(start = 9.dp, end = 9.dp, top = 16.dp),
     ) {
-        for (index in 1..steps) {
+        for (index in 0..steps) {
             Row(
                 modifier = Modifier
                     .height(2.dp)
                     .weight(1f)
-                    .background(Color.White.copy(alpha = 0.4f))
+                    .background(Color.White.copy(alpha = 0.4f)),
             ) {
                 Box(
                     modifier = Modifier

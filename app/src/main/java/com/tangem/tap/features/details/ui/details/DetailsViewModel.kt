@@ -1,14 +1,16 @@
 package com.tangem.tap.features.details.ui.details
 
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import com.tangem.core.analytics.Analytics
+import com.tangem.core.navigation.AppScreen
+import com.tangem.core.navigation.NavigationAction
+import com.tangem.domain.common.util.cardTypesResolver
 import com.tangem.tap.common.analytics.events.Settings
 import com.tangem.tap.common.feedback.FeedbackEmail
 import com.tangem.tap.common.feedback.SupportInfo
 import com.tangem.tap.common.redux.AppState
 import com.tangem.tap.common.redux.global.GlobalAction
-import com.tangem.tap.common.redux.navigation.AppScreen
-import com.tangem.tap.common.redux.navigation.NavigationAction
-import com.tangem.tap.features.details.redux.DetailsAction
 import com.tangem.tap.features.details.redux.DetailsState
 import com.tangem.tap.features.disclaimer.redux.DisclaimerAction
 import com.tangem.tap.features.home.LocaleRegionProvider
@@ -19,6 +21,9 @@ import org.rekotlin.Store
 
 class DetailsViewModel(private val store: Store<AppState>) {
 
+    var detailsScreenState: MutableState<DetailsScreenState> = mutableStateOf(updateState(store.state.detailsState))
+        private set
+
     @Suppress("ComplexMethod")
     fun updateState(state: DetailsState): DetailsScreenState {
         val cardTypesResolver = state.scanResponse?.cardTypesResolver
@@ -27,19 +32,15 @@ class DetailsViewModel(private val store: Store<AppState>) {
                 SettingsElement.WalletConnect -> {
                     if (cardTypesResolver?.isMultiwalletAllowed() == true) it else null
                 }
-                SettingsElement.SendFeedback ->
-                    if (cardTypesResolver?.isSaltPay() != true) it else null
-                SettingsElement.LinkMoreCards -> {
-                    // if (state.createBackupAllowed) it else null
-                    // TODO: SaltPay: temporary excluding backup process for Visa cards
-                    if (state.createBackupAllowed && cardTypesResolver?.isSaltPay() != true) it else null
-                }
+                SettingsElement.SendFeedback -> it
+                SettingsElement.LinkMoreCards -> if (state.createBackupAllowed) it else null
                 SettingsElement.PrivacyPolicy -> {
                     if (state.privacyPolicyUrl != null) it else null
                 }
                 SettingsElement.AppSettings -> if (state.appSettingsState.isBiometricsAvailable) it else null
                 SettingsElement.AppCurrency -> if (cardTypesResolver?.isMultiwalletAllowed() != true) it else null
                 SettingsElement.ReferralProgram -> if (cardTypesResolver?.isTangemWallet() == true) it else null
+                SettingsElement.TesterMenu -> if (BuildConfig.TESTER_MENU_ENABLED) it else null
                 else -> it
             }
         }
@@ -86,7 +87,7 @@ class DetailsViewModel(private val store: Store<AppState>) {
             }
             SettingsElement.LinkMoreCards -> {
                 Analytics.send(Settings.ButtonCreateBackup())
-                store.dispatch(DetailsAction.CreateBackup)
+                store.dispatch(WalletAction.MultiWallet.BackupWallet)
             }
             SettingsElement.TermsOfService -> {
                 store.dispatch(DisclaimerAction.Show(AppScreen.Details))
@@ -96,6 +97,9 @@ class DetailsViewModel(private val store: Store<AppState>) {
             }
             SettingsElement.ReferralProgram -> {
                 store.dispatch(NavigationAction.NavigateTo(AppScreen.ReferralProgram))
+            }
+            SettingsElement.TesterMenu -> {
+                store.state.daggerGraphState.testerRouter?.startTesterScreen()
             }
         }
     }

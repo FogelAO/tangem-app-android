@@ -1,8 +1,8 @@
 package com.tangem.tap.domain.walletStores.repository
 
 import com.tangem.common.CompletionResult
+import com.tangem.domain.wallets.models.UserWallet
 import com.tangem.tap.common.entities.FiatCurrency
-import com.tangem.tap.domain.model.UserWallet
 import com.tangem.tap.domain.model.WalletStoreModel
 
 interface WalletAmountsRepository {
@@ -24,10 +24,7 @@ interface WalletAmountsRepository {
      * @param userWallet [UserWallet] which will be used to get the list of associated [WalletStoreModel]
      * @param fiatCurrency current app [FiatCurrency]
      * */
-    suspend fun updateAmountsForUserWallet(
-        userWallet: UserWallet,
-        fiatCurrency: FiatCurrency,
-    ): CompletionResult<Unit>
+    suspend fun updateAmountsForUserWallet(userWallet: UserWallet, fiatCurrency: FiatCurrency): CompletionResult<Unit>
 
     suspend fun updateAmountsForWalletStores(
         walletStores: List<WalletStoreModel>,

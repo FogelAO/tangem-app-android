@@ -5,31 +5,46 @@ import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import by.kirich1409.viewbindingdelegate.viewBinding
 import com.google.android.material.snackbar.Snackbar
-import com.tangem.TangemSdk
+import com.tangem.core.navigation.AppScreen
+import com.tangem.core.navigation.NavigationAction
+import com.tangem.data.card.sdk.CardSdkLifecycleObserver
+import com.tangem.domain.card.ScanCardUseCase
+import com.tangem.domain.card.repository.CardSdkConfigRepository
+import com.tangem.domain.wallets.legacy.UserWalletsListManager
+import com.tangem.features.tester.api.TesterRouter
+import com.tangem.features.tokendetails.navigation.TokenDetailsRouter
+import com.tangem.features.wallet.navigation.WalletRouter
 import com.tangem.operations.backup.BackupService
-import com.tangem.tangem_sdk_new.extensions.init
+import com.tangem.sdk.extensions.init
 import com.tangem.tap.common.ActivityResultCallbackHolder
 import com.tangem.tap.common.DialogManager
 import com.tangem.tap.common.OnActivityResultCallback
 import com.tangem.tap.common.SnackbarHandler
 import com.tangem.tap.common.extensions.dispatchOnMain
 import com.tangem.tap.common.redux.NotificationsHandler
-import com.tangem.tap.common.redux.navigation.AppScreen
-import com.tangem.tap.common.redux.navigation.NavigationAction
+import com.tangem.tap.common.redux.global.GlobalAction
 import com.tangem.tap.common.shop.googlepay.GooglePayService
 import com.tangem.tap.common.shop.googlepay.GooglePayService.Companion.LOAD_PAYMENT_DATA_REQUEST_CODE
 import com.tangem.tap.common.shop.googlepay.GooglePayUtil.createPaymentsClient
 import com.tangem.tap.domain.TangemSdkManager
-import com.tangem.tap.domain.userWalletList.UserWalletsListManager
 import com.tangem.tap.domain.userWalletList.di.provideBiometricImplementation
+import com.tangem.tap.domain.userWalletList.di.provideRuntimeImplementation
+import com.tangem.tap.domain.walletconnect2.domain.WalletConnectInteractor
+import com.tangem.tap.features.intentHandler.IntentProcessor
+import com.tangem.tap.features.intentHandler.handlers.BackgroundScanIntentHandler
+import com.tangem.tap.features.intentHandler.handlers.BuyCurrencyIntentHandler
+import com.tangem.tap.features.intentHandler.handlers.SellCurrencyIntentHandler
+import com.tangem.tap.features.intentHandler.handlers.WalletConnectLinkIntentHandler
 import com.tangem.tap.features.onboarding.products.wallet.redux.BackupAction
 import com.tangem.tap.features.shop.redux.ShopAction
 import com.tangem.tap.features.welcome.redux.WelcomeAction
 import com.tangem.tap.proxy.AppStateHolder
+import com.tangem.tap.proxy.redux.DaggerGraphAction
 import com.tangem.utils.coroutines.FeatureCoroutineExceptionHandler
 import com.tangem.wallet.R
 import com.tangem.wallet.databinding.ActivityMainBinding
@@ -37,17 +52,14 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 
-lateinit var tangemSdk: TangemSdk
 lateinit var tangemSdkManager: TangemSdkManager
 lateinit var backupService: BackupService
-lateinit var userWalletsListManager: UserWalletsListManager
 internal var lockUserWalletsTimer: LockUserWalletsTimer? = null
-    private set
-var userWalletsListManagerSafe: UserWalletsListManager? = null
     private set
 var notificationsHandler: NotificationsHandler? = null
 
@@ -59,11 +71,45 @@ private val mainCoroutineContext: CoroutineContext
     get() = Job() + Dispatchers.Main + FeatureCoroutineExceptionHandler.create("mainScope")
 val mainScope = CoroutineScope(mainCoroutineContext)
 
+// TODO: Move to DI
+val userWalletsListManagerSafe: UserWalletsListManager?
+    get() = store.state.globalState.userWalletsListManager
+val userWalletsListManager: UserWalletsListManager
+    get() = userWalletsListManagerSafe!!
+
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity(), SnackbarHandler, ActivityResultCallbackHolder {
 
     @Inject
     lateinit var appStateHolder: AppStateHolder
+
+    /** Router for opening tester menu */
+    @Inject
+    lateinit var testerRouter: TesterRouter
+
+    @Inject
+    lateinit var cardSdkLifecycleObserver: CardSdkLifecycleObserver
+
+    @Inject
+    lateinit var cardSdkConfigRepository: CardSdkConfigRepository
+
+    @Inject
+    lateinit var injectedTangemSdkManager: TangemSdkManager
+
+    @Inject
+    lateinit var scanCardUseCase: ScanCardUseCase
+
+    @Inject
+    lateinit var walletRouter: WalletRouter
+
+    @Inject
+    lateinit var tokenDetailsRouter: TokenDetailsRouter
+
+    @Inject
+    lateinit var walletConnectInteractor: WalletConnectInteractor
+
+    // TODO: fixme: inject through DI
+    private val intentProcessor: IntentProcessor = IntentProcessor()
 
     private var snackbar: Snackbar? = null
     private val dialogManager = DialogManager()
@@ -72,29 +118,84 @@ class MainActivity : AppCompatActivity(), SnackbarHandler, ActivityResultCallbac
     private val onActivityResultCallbacks = mutableListOf<OnActivityResultCallback>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         systemActions()
         store.dispatch(NavigationAction.ActivityCreated(WeakReference(this)))
 
-        tangemSdk = TangemSdk.init(this, TangemSdkManager.config)
-        tangemSdkManager = TangemSdkManager(tangemSdk, this)
+        cardSdkLifecycleObserver.onCreate(context = this)
+
+        tangemSdkManager = injectedTangemSdkManager
         appStateHolder.tangemSdkManager = tangemSdkManager
-        appStateHolder.tangemSdk = tangemSdk
-        backupService = BackupService.init(tangemSdk, this)
-        userWalletsListManager = UserWalletsListManager.provideBiometricImplementation(
-            context = applicationContext,
-            tangemSdkManager = tangemSdkManager,
-        )
-        appStateHolder.userWalletsListManager = userWalletsListManager
-        userWalletsListManagerSafe = userWalletsListManager
+        backupService = BackupService.init(cardSdkConfigRepository.sdk, this)
         lockUserWalletsTimer = LockUserWalletsTimer(owner = this)
+
+        initUserWalletsListManager()
+        initIntentHandlers()
 
         store.dispatch(
             ShopAction.CheckIfGooglePayAvailable(
                 GooglePayService(createPaymentsClient(this), this),
             ),
         )
+        store.dispatch(
+            DaggerGraphAction.SetActivityDependencies(
+                testerRouter = testerRouter,
+                scanCardUseCase = scanCardUseCase,
+                walletRouter = walletRouter,
+                walletConnectInteractor = walletConnectInteractor,
+                tokenDetailsRouter = tokenDetailsRouter,
+                cardSdkConfigRepository = cardSdkConfigRepository,
+            ),
+        )
+    }
+
+    override fun onStart() {
+        super.onStart()
+        dialogManager.onStart(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // TODO: RESEARCH! NotificationsHandler is created in onResume and destroyed in onStop
+        notificationsHandler = NotificationsHandler(binding.fragmentContainer)
+
+        navigateToInitialScreenIfNeededOnResume(intent)
+    }
+
+    override fun onStop() {
+        notificationsHandler = null
+        dialogManager.onStop()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        store.dispatch(NavigationAction.ActivityDestroyed(WeakReference(this)))
+        intentProcessor.removeAll()
+        cardSdkLifecycleObserver.onDestroy()
+        super.onDestroy()
+    }
+
+    private fun initIntentHandlers() {
+        val hasSavedWalletsProvider = { store.state.globalState.userWalletsListManager?.hasUserWallets == true }
+        intentProcessor.addHandler(BackgroundScanIntentHandler(hasSavedWalletsProvider))
+        intentProcessor.addHandler(WalletConnectLinkIntentHandler())
+        intentProcessor.addHandler(BuyCurrencyIntentHandler())
+        intentProcessor.addHandler(SellCurrencyIntentHandler())
+    }
+
+    private fun initUserWalletsListManager() {
+        val manager = if (preferencesStorage.shouldSaveUserWallets) {
+            UserWalletsListManager.provideBiometricImplementation(
+                context = applicationContext,
+                tangemSdkManager = tangemSdkManager,
+            )
+        } else {
+            UserWalletsListManager.provideRuntimeImplementation()
+        }
+        store.dispatch(GlobalAction.UpdateUserWalletsListManager(manager))
     }
 
     private fun systemActions() {
@@ -112,32 +213,11 @@ class MainActivity : AppCompatActivity(), SnackbarHandler, ActivityResultCallbac
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
 
-    override fun onResume() {
-        super.onResume()
-        notificationsHandler = NotificationsHandler(binding.fragmentContainer)
-
-        navigateToInitialScreenIfNeeded(intent)
-    }
-
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        intentHandler.handleIntent(intent, userWalletsListManager.hasSavedUserWallets)
-    }
-
-    override fun onStart() {
-        super.onStart()
-        dialogManager.onStart(this)
-    }
-
-    override fun onStop() {
-        notificationsHandler = null
-        dialogManager.onStop()
-        super.onStop()
-    }
-
-    override fun onDestroy() {
-        store.dispatch(NavigationAction.ActivityDestroyed(WeakReference(this)))
-        super.onDestroy()
+        scope.launch {
+            intentProcessor.handleIntent(intent)
+        }
     }
 
     override fun showSnackbar(text: Int, buttonTitle: Int?, action: View.OnClickListener?) {
@@ -187,28 +267,39 @@ class MainActivity : AppCompatActivity(), SnackbarHandler, ActivityResultCallbac
         lockUserWalletsTimer?.restart()
     }
 
-    private fun navigateToInitialScreenIfNeeded(intent: Intent?) {
+    private fun navigateToInitialScreenIfNeededOnResume(intentWhichStartedActivity: Intent?) {
         val backStackIsEmpty = supportFragmentManager.backStackEntryCount == 0
         val isNotScannedBefore = store.state.globalState.scanResponse == null
         val isOnboardingServiceNotActive = store.state.globalState.onboardingState.onboardingStarted
         val isShopNotOpened = store.state.shopState.total != null
         when {
             !backStackIsEmpty && isNotScannedBefore && isOnboardingServiceNotActive && isShopNotOpened -> {
-                navigateToInitialScreen(intent)
+                navigateToInitialScreenOnResume(intentWhichStartedActivity)
             }
             backStackIsEmpty -> {
-                navigateToInitialScreen(intent)
+                navigateToInitialScreenOnResume(intentWhichStartedActivity)
             }
+            else -> Unit
         }
     }
 
-    private fun navigateToInitialScreen(intent: Intent?) {
-        if (userWalletsListManager.hasSavedUserWallets) {
+    private fun navigateToInitialScreenOnResume(intentWhichStartedActivity: Intent?) {
+        if (store.state.globalState.userWalletsListManager?.hasUserWallets == true) {
             store.dispatchOnMain(NavigationAction.NavigateTo(AppScreen.Welcome))
-            store.dispatchOnMain(WelcomeAction.HandleIntentIfNeeded(intent))
+            store.dispatchOnMain(WelcomeAction.SetInitialIntent(intentWhichStartedActivity))
+            scope.launch {
+                val handler = BackgroundScanIntentHandler(hasSavedUserWalletsProvider = { true })
+                val isBackgroundScanHandled = handler.handleIntent(intentWhichStartedActivity)
+                val hasNotIncompletedBackup = !backupService.hasIncompletedBackup
+                if (!isBackgroundScanHandled && hasNotIncompletedBackup) {
+                    store.dispatchOnMain(WelcomeAction.ProceedWithBiometrics)
+                }
+            }
         } else {
             store.dispatchOnMain(NavigationAction.NavigateTo(AppScreen.Home))
-            intentHandler.handleIntent(intent, hasSavedUserWallets = false)
+            scope.launch {
+                intentProcessor.handleIntent(intentWhichStartedActivity)
+            }
         }
         store.dispatch(BackupAction.CheckForUnfinishedBackup)
     }

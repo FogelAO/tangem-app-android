@@ -1,9 +1,10 @@
 package com.tangem.tap.domain.model
 
+import com.tangem.blockchain.common.address.AddressType
+import com.tangem.tap.domain.model.WalletDataModel.AddressData
 import com.tangem.tap.domain.model.WalletDataModel.Status
 import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.features.wallet.models.PendingTransaction
-import com.tangem.tap.features.wallet.redux.AddressData
 import java.math.BigDecimal
 
 /**
@@ -15,15 +16,30 @@ import java.math.BigDecimal
  * founds will be destroyed. Null if currency don't have existential deposit
  * @param fiatRate Wallet's fiat rate, used to calculate fiat balance. Null if not provided
  * @param isCardSingleToken shows that [Currency] is a card token
+ * @param isCustom shows that currency is a custom
  * */
 data class WalletDataModel(
     val currency: Currency,
     val status: Status,
-    val walletAddresses: List<AddressData>,
+    // FIXME: Left only selected wallet address here and move list of wallet addresses to WalletStoreModel
+    val walletAddresses: WalletAddresses?,
     val existentialDeposit: BigDecimal?,
     val fiatRate: BigDecimal?,
     val isCardSingleToken: Boolean,
+    val isCustom: Boolean,
 ) {
+
+    data class WalletAddresses(
+        val selectedAddress: AddressData,
+        val list: List<AddressData>,
+    )
+
+    data class AddressData(
+        val address: String,
+        val type: AddressType,
+        val shareUrl: String,
+        val exploreUrl: String,
+    )
 
     /**
      * Represent current status of currency
@@ -57,12 +73,11 @@ data class WalletDataModel(
 
     data class NoAccount(
         val amountToCreateAccount: BigDecimal?,
-    ) : Status() {
-        override val isErrorStatus: Boolean = true
-    }
+    ) : Status()
 
     data class Unreachable(
         override val errorMessage: String?,
+        override val amount: BigDecimal = BigDecimal.ZERO,
     ) : Status() {
         override val isErrorStatus: Boolean = true
     }

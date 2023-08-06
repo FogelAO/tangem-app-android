@@ -4,16 +4,14 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.OnBackPressedCallback
 import androidx.compose.animation.Crossfade
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.ComposeView
-import androidx.core.view.WindowCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import com.tangem.feature.swap.router.CustomTabsManager
+import com.tangem.feature.swap.router.SwapNavScreen
 import com.tangem.feature.swap.router.SwapRouter
-import com.tangem.feature.swap.router.SwapScreen
 import com.tangem.feature.swap.ui.SwapScreen
 import com.tangem.feature.swap.ui.SwapSelectTokenScreen
 import com.tangem.feature.swap.ui.SwapSuccessScreen
@@ -27,7 +25,6 @@ class SwapFragment : Fragment() {
     private val viewModel by viewModels<SwapViewModel>()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        activity?.window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
         viewModel.setRouter(
             SwapRouter(
                 fragmentManager = WeakReference(parentFragmentManager),
@@ -35,15 +32,6 @@ class SwapFragment : Fragment() {
             ),
         )
         viewModel.onScreenOpened()
-
-        activity?.onBackPressedDispatcher?.addCallback(
-            viewLifecycleOwner,
-            object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    viewModel.uiState.onBackClicked()
-                }
-            },
-        )
 
         return ComposeView(inflater.context).apply {
             setContent {
@@ -57,8 +45,8 @@ class SwapFragment : Fragment() {
     private fun ScreenContent(viewModel: SwapViewModel) {
         Crossfade(targetState = viewModel.currentScreen) { screen ->
             when (screen) {
-                SwapScreen.Main -> SwapScreen(stateHolder = viewModel.uiState)
-                SwapScreen.Success -> {
+                SwapNavScreen.Main -> SwapScreen(stateHolder = viewModel.uiState)
+                SwapNavScreen.Success -> {
                     val successState = viewModel.uiState.successState
                     if (successState != null) {
                         SwapSuccessScreen(state = successState, viewModel.uiState.onBackClicked)
@@ -66,11 +54,12 @@ class SwapFragment : Fragment() {
                         SwapScreen(stateHolder = viewModel.uiState)
                     }
                 }
-                SwapScreen.SelectToken -> {
+                SwapNavScreen.SelectToken -> {
                     val tokenState = viewModel.uiState.selectTokenState
                     if (tokenState != null) {
                         SwapSelectTokenScreen(
                             state = tokenState,
+                            onSearchFocusChange = viewModel.uiState.onSearchFocusChange,
                             onBack = viewModel.uiState.onBackClicked,
                         )
                     } else {
@@ -83,5 +72,6 @@ class SwapFragment : Fragment() {
 
     companion object {
         const val CURRENCY_BUNDLE_KEY = "swap_currency"
+        const val DERIVATION_PATH = "DERIVATION_STYLE"
     }
 }

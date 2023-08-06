@@ -3,10 +3,7 @@ package com.tangem.tap.features.details.redux.walletconnect
 import org.rekotlin.Action
 
 object WalletConnectReducer {
-    fun reduce(
-        action: Action,
-        state: WalletConnectState,
-    ): WalletConnectState {
+    fun reduce(action: Action, state: WalletConnectState): WalletConnectState {
         if (action !is WalletConnectAction) return state
 
         return when (action) {
@@ -30,15 +27,23 @@ object WalletConnectReducer {
                     state.sessions.filterNot { it.session.toUri() == action.session.toUri() }
                 state.copy(sessions = sessions)
             }
-            is WalletConnectAction.UnsupportedCard -> state.copy(loading = false)
-            is WalletConnectAction.RefuseOpeningSession -> state.copy(loading = false)
-            is WalletConnectAction.OpeningSessionTimeout -> state.copy(loading = false)
-            is WalletConnectAction.FailureEstablishingSession -> state.copy(loading = false)
+            is WalletConnectAction.UnsupportedCard,
+            is WalletConnectAction.RefuseOpeningSession,
+            is WalletConnectAction.OpeningSessionTimeout,
+            is WalletConnectAction.FailureEstablishingSession,
+            -> state.copy(loading = false)
             is WalletConnectAction.UpdateBlockchain -> state.copy(
                 sessions = state.sessions
                     .filterNot { it.peerId == action.updatedSession.peerId } + action.updatedSession,
             )
-
+            is WalletConnectAction.ApproveProposal -> state.copy(loading = true)
+            is WalletConnectAction.RejectProposal,
+            is WalletConnectAction.SessionEstablished,
+            is WalletConnectAction.SessionRejected,
+            -> state.copy(loading = false)
+            is WalletConnectAction.SessionListUpdated -> state.copy(
+                wc2Sessions = action.sessions,
+            )
             else -> state
         }
     }

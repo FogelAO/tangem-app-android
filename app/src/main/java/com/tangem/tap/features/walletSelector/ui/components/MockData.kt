@@ -1,6 +1,6 @@
 package com.tangem.tap.features.walletSelector.ui.components
 
-import com.tangem.domain.common.util.UserWalletId
+import com.tangem.domain.wallets.models.UserWalletId
 import com.tangem.tap.features.walletSelector.ui.WalletSelectorScreenState
 import com.tangem.tap.features.walletSelector.ui.model.MultiCurrencyUserWalletItem
 import com.tangem.tap.features.walletSelector.ui.model.SingleCurrencyUserWalletItem
@@ -11,6 +11,7 @@ internal object MockData {
         id = UserWalletId("wallet_1"),
         balance = UserWalletItem.Balance.Loaded(
             amount = "6781.05 $",
+            showWarning = true,
         ),
         name = "Wallet",
         imageUrl = "https://app.tangem.com/cards/card_default.png",
@@ -23,6 +24,7 @@ internal object MockData {
         id = UserWalletId("wallet_4"),
         balance = UserWalletItem.Balance.Loaded(
             amount = "6781.05 $",
+            showWarning = false,
         ),
         name = "Wallet",
         imageUrl = "https://app.tangem.com/cards/card_default.png",

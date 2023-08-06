@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -44,9 +45,16 @@ import com.tangem.feature.swap.presentation.R
 import com.valentinilk.shimmer.shimmer
 
 @Composable
-fun SwapSelectTokenScreen(state: SwapSelectTokenStateHolder, onBack: () -> Unit) {
+fun SwapSelectTokenScreen(
+    state: SwapSelectTokenStateHolder,
+    onSearchFocusChange: (Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
     TangemTheme {
         Scaffold(
+            modifier = Modifier
+                .systemBarsPadding()
+                .background(color = TangemTheme.colors.background.secondary),
             content = { padding ->
                 ListOfTokens(state = state, Modifier.padding(padding))
             },
@@ -57,11 +65,11 @@ fun SwapSelectTokenScreen(state: SwapSelectTokenStateHolder, onBack: () -> Unit)
                     placeholderSearchText = stringResource(id = R.string.search_tokens_title),
                     onSearchChange = state.onSearchEntered,
                     onSearchDisplayClose = { state.onSearchEntered("") },
+                    onFocusChange = onSearchFocusChange,
                     subtitle = state.network.name,
                     icon = painterResource(id = getActiveIconRes(state.network.blockchainId)),
                 )
             },
-            modifier = Modifier.background(color = TangemTheme.colors.background.secondary),
         )
     }
 }
@@ -173,13 +181,13 @@ private fun TokenItem(token: TokenToSelect, network: Network, onTokenClick: () -
                 modifier = Modifier.padding(start = TangemTheme.dimens.spacing8),
             ) {
                 Text(
-                    text = token.addedTokenBalanceData.amount ?: "",
+                    text = token.addedTokenBalanceData.amountEquivalent.orEmpty(),
                     style = TangemTheme.typography.subtitle1,
                     color = TangemTheme.colors.text.primary1,
                 )
                 SpacerW2()
                 Text(
-                    text = token.addedTokenBalanceData.amountEquivalent ?: "",
+                    text = token.addedTokenBalanceData.amount.orEmpty(),
                     style = TangemTheme.typography.caption,
                     color = TangemTheme.colors.text.tertiary,
                 )
@@ -190,10 +198,7 @@ private fun TokenItem(token: TokenToSelect, network: Network, onTokenClick: () -
 
 @Suppress("MagicNumber")
 @Composable
-private fun TokenIcon(
-    token: TokenToSelect,
-    @DrawableRes iconPlaceholder: Int?,
-) {
+private fun TokenIcon(token: TokenToSelect, @DrawableRes iconPlaceholder: Int?) {
     val data = token.iconUrl.ifEmpty {
         iconPlaceholder
     }
@@ -225,9 +230,7 @@ private fun TokenIcon(
 }
 
 @Composable
-private fun TokenImageShimmer(
-    modifier: Modifier = Modifier,
-) {
+private fun TokenImageShimmer(modifier: Modifier = Modifier) {
     Box(modifier = modifier.shimmer()) {
         Box(
             modifier = Modifier
@@ -264,6 +267,7 @@ private fun TokenScreenPreview() {
             onTokenSelected = {},
             network = Network("Ethereum", "ETH"),
         ),
+        onSearchFocusChange = {},
         onBack = {},
     )
 }

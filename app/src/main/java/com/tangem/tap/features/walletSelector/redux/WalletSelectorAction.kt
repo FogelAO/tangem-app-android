@@ -1,9 +1,9 @@
 package com.tangem.tap.features.walletSelector.redux
 
 import com.tangem.common.core.TangemError
-import com.tangem.domain.common.util.UserWalletId
+import com.tangem.domain.wallets.models.UserWallet
+import com.tangem.domain.wallets.models.UserWalletId
 import com.tangem.tap.common.entities.FiatCurrency
-import com.tangem.tap.domain.model.UserWallet
 import com.tangem.tap.domain.model.WalletStoreModel
 import org.rekotlin.Action
 
@@ -35,6 +35,7 @@ internal sealed interface WalletSelectorAction : Action {
 
     data class SelectWallet(
         val userWalletId: UserWalletId,
+        val sendAnalyticsEvent: Boolean = false,
     ) : WalletSelectorAction
 
     data class RenameWallet(
@@ -56,4 +57,6 @@ internal sealed interface WalletSelectorAction : Action {
     ) : WalletSelectorAction
 
     object CloseError : WalletSelectorAction
+
+    object ClearUserWallets : WalletSelectorAction
 }

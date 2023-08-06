@@ -149,6 +149,17 @@
             ]
         },
         {
+            "id": "the-open-network",
+            "symbol": "TON",
+            "name": "Toncoin",
+            "networks":
+            [
+                {
+                    "networkId": "the-open-network/test"
+                }
+            ]
+        },
+        {
             "id" : "Tangem Coin A-TCA",
             "symbol" : "TCA",
             "name" : "Tangem Coin A",
@@ -451,9 +462,61 @@
                     "networkId": "optimistic-ethereum/test"
                 }
             ]
+        },
+        {
+            "id": "kava",
+            "symbol": "KAVA",
+            "name": "Kava EVM",
+            "networks":
+            [
+                {
+                    "networkId": "kava/test"
+                }
+            ]
+        },
+        {
+            "id": "telos",
+            "symbol": "TLOS",
+            "name": "Telos EVM",
+            "networks":
+            [
+                {
+                    "networkId": "telos/test"
+                }
+            ]
+        },
+        {
+            "id": "ravencoin",
+            "symbol": "RVN",
+            "name": "Ravencoin",
+            "networks":
+            [
+                {
+                    "networkId": "ravencoin/test"
+                }
+            ]
+        },
+        {
+            "id": "cosmos",
+            "symbol": "ATOM",
+            "name": "Cosmos Hub",
+            "networks":
+            [
+                {
+                    "networkId": "cosmos/test"
+                }
+            ]
+        },
+        {
+            "id": "aleph-zero",
+            "symbol": "AZERO",
+            "name": "Aleph Zero",
+            "networks":
+            [
+                {
+                    "networkId": "aleph-zero/test"
+                }
+            ]
         }
-    ],
-    
-    "total" : 0,
-    "imageHost" : "https://s3.eu-central-1.amazonaws.com/tangem.api/coins/"
+    ]
 }

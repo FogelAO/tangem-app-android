@@ -5,20 +5,22 @@ import android.content.Intent
 import com.google.android.gms.wallet.PaymentData
 import com.shopify.buy3.Storefront
 import com.tangem.core.analytics.Analytics
+import com.tangem.datasource.config.models.ShopifyShop
 import com.tangem.tap.common.analytics.converters.ShopOrderToEventConverter
 import com.tangem.tap.common.extensions.filterNotNull
-import com.tangem.tap.common.shop.data.ProductType
 import com.tangem.tap.common.shop.data.TangemProduct
 import com.tangem.tap.common.shop.data.TotalSum
 import com.tangem.tap.common.shop.googlepay.GooglePayService
 import com.tangem.tap.common.shop.shopify.ShopifyService
-import com.tangem.tap.common.shop.shopify.ShopifyShop
 import com.tangem.tap.common.shop.shopify.data.CheckoutItem
+import com.tangem.tap.features.shop.domain.models.ProductType
+import com.tangem.tap.features.shop.domain.models.ProductType.Companion.SKUS_TO_DISPLAY
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import java.math.BigDecimal
-import java.util.*
+import java.util.Currency
+import java.util.UUID
 
 class TangemShopService(application: Application, shopifyShop: ShopifyShop) {
 
@@ -82,16 +84,18 @@ class TangemShopService(application: Application, shopifyShop: ShopifyShop) {
 
     suspend fun checkIfGooglePayAvailable(googlePayService: GooglePayService): Result<Boolean> {
         this.googlePayService = googlePayService
-        return googlePayService.checkIfGooglePayAvailable()
+        return googlePayService.checkIfGooglePayAvailable(shopifyService.shop.merchantID != null)
     }
 
     fun buyWithGooglePay(productType: ProductType) {
-        val totalPrice = checkouts[productType]!!.totalPriceV2.amount
-        googlePayService.payWithGooglePay(
-            totalPriceCents = totalPrice,
-            currencyCode = checkouts[productType]!!.currencyCode.name,
-            merchantID = shopifyService.shop.merchantID,
-        )
+        shopifyService.shop.merchantID?.let { merchantId ->
+            val totalPrice = checkouts[productType]!!.totalPriceV2.amount
+            googlePayService.payWithGooglePay(
+                totalPriceCents = totalPrice,
+                currencyCode = checkouts[productType]!!.currencyCode.name,
+                merchantID = merchantId,
+            )
+        }
     }
 
 //    fun subscribeToGooglePayResult(
@@ -106,11 +110,7 @@ class TangemShopService(application: Application, shopifyShop: ShopifyShop) {
 //        }
 //    }
 
-    suspend fun handleGooglePayResult(
-        resultCode: Int,
-        data: Intent?,
-        productType: ProductType,
-    ): Result<Unit> {
+    suspend fun handleGooglePayResult(resultCode: Int, data: Intent?, productType: ProductType): Result<Unit> {
         val result = googlePayService.handleResponseFromGooglePay(resultCode, data)
         result.onSuccess {
             val finalizePaymentResult = completeTokenizedPayment(it, productType)
@@ -189,7 +189,6 @@ class TangemShopService(application: Application, shopifyShop: ShopifyShop) {
                     ),
                     appliedDiscount = it.getAppliedDiscount(),
                 ),
-
             )
         }
         return Result.failure(result.exceptionOrNull()!!)
@@ -207,12 +206,6 @@ class TangemShopService(application: Application, shopifyShop: ShopifyShop) {
                 Analytics.send(event)
             }
         }
-    }
-
-    companion object {
-        const val TANGEM_WALLET_2_CARDS_SKU = "TG115X2-S"
-        const val TANGEM_WALLET_3_CARDS_SKU = "TG115X3-S"
-        val SKUS_TO_DISPLAY = listOf(TANGEM_WALLET_2_CARDS_SKU, TANGEM_WALLET_3_CARDS_SKU)
     }
 }
 

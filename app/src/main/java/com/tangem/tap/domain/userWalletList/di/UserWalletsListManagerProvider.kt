@@ -5,20 +5,17 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.tangem.common.json.TangemSdkAdapter
 import com.tangem.common.services.secure.SecureStorage
-import com.tangem.tangem_sdk_new.storage.AndroidSecureStorage
-import com.tangem.tangem_sdk_new.storage.createEncryptedSharedPreferences
+import com.tangem.domain.wallets.legacy.UserWalletsListManager
+import com.tangem.sdk.storage.AndroidSecureStorage
+import com.tangem.sdk.storage.createEncryptedSharedPreferences
 import com.tangem.tap.domain.TangemSdkManager
-import com.tangem.tap.domain.userWalletList.UserWalletsListManager
 import com.tangem.tap.domain.userWalletList.implementation.BiometricUserWalletsListManager
+import com.tangem.tap.domain.userWalletList.implementation.RuntimeUserWalletsListManager
 import com.tangem.tap.domain.userWalletList.repository.implementation.BiometricUserWalletsKeysRepository
 import com.tangem.tap.domain.userWalletList.repository.implementation.DefaultSelectedUserWalletRepository
 import com.tangem.tap.domain.userWalletList.repository.implementation.DefaultUserWalletsPublicInformationRepository
 import com.tangem.tap.domain.userWalletList.repository.implementation.DefaultUserWalletsSensitiveInformationRepository
-import com.tangem.tap.domain.userWalletList.utils.json.ByteArrayKeyAdapter
-import com.tangem.tap.domain.userWalletList.utils.json.CardBackupStatusAdapter
-import com.tangem.tap.domain.userWalletList.utils.json.ExtendedPublicKeysMapAdapter
-import com.tangem.tap.domain.userWalletList.utils.json.ScanResponseDerivedKeysMapAdapter
-import com.tangem.tap.domain.userWalletList.utils.json.WalletDerivedKeysMapAdapter
+import com.tangem.tap.domain.userWalletList.utils.json.*
 
 private const val USER_WALLETS_STORAGE_NAME = "user_wallets_storage"
 
@@ -32,9 +29,10 @@ fun UserWalletsListManager.Companion.provideBiometricImplementation(
         .add(ByteArrayKeyAdapter())
         .add(ExtendedPublicKeysMapAdapter())
         .add(CardBackupStatusAdapter())
+        .add(DerivationPathAdapterWithMigration())
         .add(TangemSdkAdapter.DateAdapter())
-        .add(TangemSdkAdapter.DerivationPathAdapter())
         .add(TangemSdkAdapter.DerivationNodeAdapter())
+        .add(TangemSdkAdapter.FirmwareVersionAdapter()) // For PrimaryCard model
         .add(KotlinJsonAdapterFactory())
         .build()
 
@@ -68,4 +66,8 @@ fun UserWalletsListManager.Companion.provideBiometricImplementation(
         sensitiveInformationRepository = sensitiveInformationRepository,
         selectedUserWalletRepository = selectedUserWalletRepository,
     )
+}
+
+fun UserWalletsListManager.Companion.provideRuntimeImplementation(): UserWalletsListManager {
+    return RuntimeUserWalletsListManager()
 }

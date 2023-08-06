@@ -1,6 +1,7 @@
 package com.tangem.feature.swap.ui
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -19,6 +20,7 @@ import com.tangem.feature.swap.presentation.R
 fun SwapSuccessScreen(state: SwapSuccessStateHolder, onBack: () -> Unit) {
     TangemTheme {
         Scaffold(
+            modifier = Modifier.systemBarsPadding(),
             content = { padding ->
                 ResultScreenContent(
                     resultMessage = makeSuccessMessage(
@@ -37,7 +39,7 @@ fun SwapSuccessScreen(state: SwapSuccessStateHolder, onBack: () -> Unit) {
             },
             topBar = {
                 AppBarWithBackButton(
-                    text = stringResource(R.string.swapping_swap),
+                    text = stringResource(R.string.common_swap),
                     onBackClick = onBack,
                     iconRes = R.drawable.ic_close_24,
                 )
@@ -48,7 +50,8 @@ fun SwapSuccessScreen(state: SwapSuccessStateHolder, onBack: () -> Unit) {
 
 @Composable
 private fun makeSuccessMessage(fromTokenAmount: String, toTokenAmount: String): AnnotatedString {
-    val message = stringResource(id = R.string.swapping_swap_of_to, fromTokenAmount, toTokenAmount)
+    val swapToString = stringResource(id = R.string.swapping_swap_of_to, fromTokenAmount)
+    val message = "$swapToString\n$toTokenAmount"
     return buildAnnotatedString {
         append(message)
         addStyle(

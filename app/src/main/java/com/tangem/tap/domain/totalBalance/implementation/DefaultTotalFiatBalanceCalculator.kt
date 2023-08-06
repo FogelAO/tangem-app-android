@@ -22,12 +22,16 @@ internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
                 val walletsData = walletStores
                     .asSequence()
                     .flatMap { it.walletsData }
-                val calculateAmount = { walletsData.calculateTotalFiatAmount() }
 
-                when (walletsData.findStatus()) {
+                when (val status = walletsData.findStatus()) {
                     TotalFiatBalanceStatus.Loading -> TotalFiatBalance.Loading
-                    TotalFiatBalanceStatus.Error -> TotalFiatBalance.Error(calculateAmount())
-                    TotalFiatBalanceStatus.Loaded -> TotalFiatBalance.Loaded(calculateAmount())
+                    TotalFiatBalanceStatus.Failed -> TotalFiatBalance.Failed
+                    TotalFiatBalanceStatus.Warning,
+                    TotalFiatBalanceStatus.Loaded,
+                    -> TotalFiatBalance.Loaded(
+                        amount = walletsData.calculateTotalFiatAmount(),
+                        isWarning = status == TotalFiatBalanceStatus.Warning,
+                    )
                 }
             }
         }
@@ -47,14 +51,15 @@ internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
                 is WalletDataModel.VerifiedOnline,
                 is WalletDataModel.SameCurrencyTransactionInProgress,
                 is WalletDataModel.TransactionInProgress,
-                is WalletDataModel.NoAccount -> if (walletData.fiatRate == null) {
-                    TotalFiatBalanceStatus.Error
+                is WalletDataModel.NoAccount,
+                -> if (walletData.isWarningCase()) {
+                    TotalFiatBalanceStatus.Warning
                 } else {
                     TotalFiatBalanceStatus.Loaded
                 }
                 is WalletDataModel.Unreachable,
                 is WalletDataModel.MissedDerivation,
-                -> TotalFiatBalanceStatus.Error
+                -> TotalFiatBalanceStatus.Failed
                 is WalletDataModel.Loading -> TotalFiatBalanceStatus.Loading
             }
         }
@@ -62,34 +67,38 @@ internal class DefaultTotalFiatBalanceCalculator : TotalFiatBalanceCalculator {
 
     private fun Sequence<WalletDataModel>.calculateTotalFiatAmount(): BigDecimal {
         return this
+            .filterNot { it.isWarningCase() }
             .map { walletData ->
                 walletData.fiatRate
+                    ?.takeUnless { walletData.status.isErrorStatus }
                     ?.let { walletData.status.amount.toFiatValue(it) }
                     ?: BigDecimal.ZERO
             }
-            .reduce(BigDecimal::plus)
+            .reduce { acc, value ->
+                acc + value
+            }
     }
 
     private fun getCurrentStatus(
         prevStatus: TotalFiatBalanceStatus,
         newStatus: TotalFiatBalanceStatus,
     ): TotalFiatBalanceStatus {
-        return when (prevStatus) {
-            TotalFiatBalanceStatus.Loading -> prevStatus
-            TotalFiatBalanceStatus.Loaded,
-            TotalFiatBalanceStatus.Error,
-            -> when (newStatus) {
-                TotalFiatBalanceStatus.Loading,
-                TotalFiatBalanceStatus.Error,
-                -> newStatus
-                TotalFiatBalanceStatus.Loaded -> prevStatus
-            }
-        }
+        return TotalFiatBalanceStatus[minOf(prevStatus.ordinal, newStatus.ordinal)]
     }
+
+    private fun WalletDataModel.isWarningCase(): Boolean = isCustom && fiatRate == null
 
     private enum class TotalFiatBalanceStatus {
         Loading,
-        Error,
+        Failed,
+        Warning,
         Loaded,
+        ;
+
+        companion object {
+            private val allValues = values()
+
+            operator fun get(index: Int) = allValues[index]
+        }
     }
 }

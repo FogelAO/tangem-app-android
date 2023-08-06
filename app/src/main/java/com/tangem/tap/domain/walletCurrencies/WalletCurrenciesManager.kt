@@ -1,7 +1,7 @@
 package com.tangem.tap.domain.walletCurrencies
 
 import com.tangem.common.CompletionResult
-import com.tangem.tap.domain.model.UserWallet
+import com.tangem.domain.wallets.models.UserWallet
 import com.tangem.tap.features.wallet.models.Currency
 
 interface WalletCurrenciesManager {
@@ -16,10 +16,7 @@ interface WalletCurrenciesManager {
      *
      * @return [CompletionResult] of operation
      * */
-    suspend fun update(
-        userWallet: UserWallet,
-        currency: Currency,
-    ): CompletionResult<Unit>
+    suspend fun update(userWallet: UserWallet, currency: Currency): CompletionResult<Unit>
 
     /**
      * Add list of [Currency] to [UserWallet].
@@ -32,10 +29,7 @@ interface WalletCurrenciesManager {
      *
      * @return [CompletionResult] of operation
      * */
-    suspend fun addCurrencies(
-        userWallet: UserWallet,
-        currenciesToAdd: List<Currency>,
-    ): CompletionResult<Unit>
+    suspend fun addCurrencies(userWallet: UserWallet, currenciesToAdd: List<Currency>): CompletionResult<Unit>
 
     /**
      * Remove [Currency] from [UserWallet]
@@ -48,10 +42,7 @@ interface WalletCurrenciesManager {
      *
      * @return [CompletionResult] of operation
      * */
-    suspend fun removeCurrency(
-        userWallet: UserWallet,
-        currencyToRemove: Currency,
-    ): CompletionResult<Unit>
+    suspend fun removeCurrency(userWallet: UserWallet, currencyToRemove: Currency): CompletionResult<Unit>
 
     /**
      * Remove list of [Currency] from [UserWallet]
@@ -64,10 +55,32 @@ interface WalletCurrenciesManager {
      *
      * @return [CompletionResult] of operation
      * */
-    suspend fun removeCurrencies(
-        userWallet: UserWallet,
-        currenciesToRemove: List<Currency>,
-    ): CompletionResult<Unit>
+    suspend fun removeCurrencies(userWallet: UserWallet, currenciesToRemove: List<Currency>): CompletionResult<Unit>
+
+    /**
+     * Add a callback [Listener]
+     *
+     * @param listener The callback that will add
+     */
+    fun addListener(listener: Listener)
+
+    /**
+     * Remove a callback [Listener]
+     *
+     * @param listener The callback that will removed
+     */
+    fun removeListener(listener: Listener)
+
+    /**
+     * Interface definition for a callbacks
+     */
+    interface Listener {
+        fun willUpdate(userWallet: UserWallet, currency: Currency) {}
+        fun didUpdate(userWallet: UserWallet, currency: Currency) {}
+        fun willCurrenciesAdd(userWallet: UserWallet, currenciesToAdd: List<Currency>) {}
+        fun willCurrenciesRemove(userWallet: UserWallet, currenciesToRemove: List<Currency>) {}
+        fun willCurrencyRemove(userWallet: UserWallet, currencyToRemove: Currency) {}
+    }
 
     // For provider
     companion object

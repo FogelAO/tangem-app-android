@@ -1,20 +1,10 @@
 package com.tangem.tap.features.send.redux.reducers
 
 import com.tangem.blockchain.common.AmountType
+import com.tangem.blockchain.common.Blockchain
 import com.tangem.tap.common.CurrencyConverter
 import com.tangem.tap.common.entities.IndeterminateProgressButton
-import com.tangem.tap.features.send.redux.AddressPayIdActionUi
-import com.tangem.tap.features.send.redux.AddressPayIdVerifyAction
-import com.tangem.tap.features.send.redux.AmountAction
-import com.tangem.tap.features.send.redux.AmountActionUi
-import com.tangem.tap.features.send.redux.FeeAction
-import com.tangem.tap.features.send.redux.FeeActionUi
-import com.tangem.tap.features.send.redux.PrepareSendScreen
-import com.tangem.tap.features.send.redux.ReceiptAction
-import com.tangem.tap.features.send.redux.ReleaseSendState
-import com.tangem.tap.features.send.redux.SendAction
-import com.tangem.tap.features.send.redux.SendScreenAction
-import com.tangem.tap.features.send.redux.TransactionExtrasAction
+import com.tangem.tap.features.send.redux.*
 import com.tangem.tap.features.send.redux.states.ExternalTransactionData
 import com.tangem.tap.features.send.redux.states.IdStateHolder
 import com.tangem.tap.features.send.redux.states.SendState
@@ -35,7 +25,7 @@ object SendScreenReducer {
 
         val reducer: SendInternalReducer = when (action) {
             is PrepareSendScreen -> PrepareSendScreenStatesReducer()
-            is AddressPayIdActionUi, is AddressPayIdVerifyAction -> AddressPayIdReducer()
+            is AddressActionUi, is AddressVerifyAction -> AddressReducer()
             is TransactionExtrasAction -> TransactionExtrasReducer()
             is AmountActionUi, is AmountAction -> AmountReducer()
             is FeeActionUi, is FeeAction -> FeeReducer()
@@ -55,6 +45,7 @@ private class SendReducer : SendInternalReducer {
                 sendState.copy(sendButtonState = IndeterminateProgressButton(action.state))
             }
             is SendAction.Dialog.TezosWarningDialog -> sendState.copy(dialog = action)
+            is SendAction.Dialog.KaspaWarningDialog -> sendState.copy(dialog = action)
             is SendAction.Dialog.SendTransactionFails.CardSdkError -> sendState.copy(dialog = action)
             is SendAction.Dialog.SendTransactionFails.BlockchainSdkError -> sendState.copy(dialog = action)
             is SendAction.Dialog.RequestFeeError -> sendState.copy(dialog = action)
@@ -80,7 +71,7 @@ private class SendReducer : SendInternalReducer {
             amountState = state.amountState.copy(
                 inputIsEnabled = false,
             ),
-            addressPayIdState = state.addressPayIdState.copy(
+            addressState = state.addressState.copy(
                 inputIsEnabled = false,
             ),
         )
@@ -94,24 +85,31 @@ private class EmptyReducer : SendInternalReducer {
 private class PrepareSendScreenStatesReducer : SendInternalReducer {
     override fun handle(action: SendScreenAction, sendState: SendState): SendState {
         val prepareAction = action as PrepareSendScreen
-        val walletManager = action.walletManager!!
+        val walletManager = action.walletManager
         val amountToExtract = prepareAction.tokenAmount ?: prepareAction.coinAmount!!
         val decimals = amountToExtract.decimals
+        val feePaidInNetworkCurrency = isFeePaidInNetworkCurrency(walletManager.wallet.blockchain)
 
         return sendState.copy(
             walletManager = walletManager,
             coinConverter = action.coinRate?.let { CurrencyConverter(it, decimals) },
             tokenConverter = action.tokenRate?.let { CurrencyConverter(it, decimals) },
             amountState = sendState.amountState.copy(
+                feePaidInCurrencyNetworkCurrency = feePaidInNetworkCurrency,
                 amountToExtract = amountToExtract,
                 typeOfAmount = amountToExtract.type,
                 balanceCrypto = amountToExtract.value ?: BigDecimal.ZERO,
             ),
             feeState = sendState.feeState.copy(
-                includeFeeSwitcherIsEnabled = amountToExtract.type == AmountType.Coin,
+                includeFeeSwitcherIsEnabled = feePaidInNetworkCurrency || isCoinAmount(amountToExtract.type),
             ),
         )
     }
+
+    private fun isFeePaidInNetworkCurrency(blockchain: Blockchain): Boolean =
+        blockchain.tokenTransactionFeePaidInNetworkCurrency()
+
+    private fun isCoinAmount(typeOfAmount: AmountType): Boolean = typeOfAmount == AmountType.Coin
 }
 
 internal fun updateLastState(sendState: SendState, lastChangedState: IdStateHolder): SendState {

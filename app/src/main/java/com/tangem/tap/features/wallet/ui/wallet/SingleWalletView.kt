@@ -3,24 +3,21 @@ package com.tangem.tap.features.wallet.ui.wallet
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.tangem.tap.common.extensions.beginDelayedTransition
-import com.tangem.tap.common.extensions.fitChipsByGroupWidth
-import com.tangem.tap.common.extensions.getQuantityString
-import com.tangem.tap.common.extensions.getString
-import com.tangem.tap.common.extensions.hide
-import com.tangem.tap.common.extensions.show
+import com.tangem.core.analytics.Analytics
+import com.tangem.tap.common.analytics.events.Token
+import com.tangem.tap.common.extensions.*
+import com.tangem.tap.domain.model.WalletDataModel
 import com.tangem.tap.features.onboarding.products.twins.redux.TwinCardsState
 import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.features.wallet.models.PendingTransaction
 import com.tangem.tap.features.wallet.models.PendingTransactionType
 import com.tangem.tap.features.wallet.redux.WalletAction
-import com.tangem.tap.features.wallet.redux.WalletData
-import com.tangem.tap.features.wallet.redux.WalletMainButton
 import com.tangem.tap.features.wallet.redux.WalletState
 import com.tangem.tap.features.wallet.ui.BalanceWidget
 import com.tangem.tap.features.wallet.ui.MultipleAddressUiHelper
 import com.tangem.tap.features.wallet.ui.WalletFragment
 import com.tangem.tap.features.wallet.ui.adapters.PendingTransactionsAdapter
+import com.tangem.tap.features.wallet.ui.utils.*
 import com.tangem.tap.features.wallet.ui.view.WalletDetailsButtonsRow
 import com.tangem.tap.store
 import com.tangem.wallet.R
@@ -28,6 +25,11 @@ import com.tangem.wallet.databinding.FragmentWalletBinding
 
 class SingleWalletView : WalletView() {
     private lateinit var pendingTransactionAdapter: PendingTransactionsAdapter
+
+    // FIXME: Move to model watcher
+    private var watchedPrimaryWalletForAddressCard: WalletDataModel? = null
+    private var watchedPrimaryWalletForBalance: WalletDataModel? = null
+
     override fun changeWalletView(fragment: WalletFragment, binding: FragmentWalletBinding) {
         setFragment(fragment, binding)
         onViewCreated()
@@ -35,12 +37,14 @@ class SingleWalletView : WalletView() {
     }
 
     private fun showSingleWalletView(binding: FragmentWalletBinding) = with(binding) {
+        watchedPrimaryWalletForAddressCard = null
+        watchedPrimaryWalletForBalance = null
         tvTwinCardNumber.hide()
         rvMultiwallet.hide()
         btnAddToken.hide()
         rvPendingTransaction.hide()
         pbLoadingUserTokens.hide()
-        lCardTotalBalance.root.hide()
+        lCardTotalBalance.hide()
         lSingleWalletBalance.root.hide()
         lWalletRescanWarning.root.hide()
         lWalletBackupWarning.root.hide()
@@ -53,6 +57,12 @@ class SingleWalletView : WalletView() {
         setupTransactionsRecyclerView()
     }
 
+    override fun onDestroyFragment() {
+        super.onDestroyFragment()
+        watchedPrimaryWalletForAddressCard = null
+        watchedPrimaryWalletForBalance = null
+    }
+
     private fun setupTransactionsRecyclerView() {
         val fragment = fragment ?: return
         pendingTransactionAdapter = PendingTransactionsAdapter()
@@ -63,13 +73,13 @@ class SingleWalletView : WalletView() {
 
     override fun onNewState(state: WalletState) {
         val binding = binding ?: return
-        state.primaryWallet ?: return
+        val primaryWalletData = state.primaryWalletData ?: return
 
         setupTwinCards(state.twinCardsState, binding)
-        setupButtons(state.primaryWallet, binding, state.isExchangeServiceFeatureOn)
+        setupButtons(primaryWalletData, binding, state.isExchangeServiceFeatureOn)
         setupAddressCard(state, binding)
-        showPendingTransactionsIfPresent(state.primaryWallet.pendingTransactions)
-        setupBalance(state, state.primaryWallet)
+        showPendingTransactionsIfPresent(primaryWalletData.status.pendingTransactions)
+        setupBalance(state, primaryWalletData)
     }
 
     private fun showPendingTransactionsIfPresent(pendingTransactions: List<PendingTransaction>) {
@@ -80,31 +90,33 @@ class SingleWalletView : WalletView() {
         binding?.rvPendingTransaction?.show(knownTransactions.isNotEmpty())
     }
 
-    private fun setupBalance(state: WalletState, primaryWallet: WalletData) {
+    private fun setupBalance(state: WalletState, primaryWallet: WalletDataModel) {
+        if (watchedPrimaryWalletForBalance == primaryWallet) return
+        watchedPrimaryWalletForBalance = primaryWallet
+
         val fragment = fragment ?: return
         binding?.apply {
             lCardBalance.lBalance.root.show()
             BalanceWidget(
                 binding = this.lCardBalance,
                 fragment = fragment,
-                data = primaryWallet.currencyData,
-                isTwinCard = state.isTangemTwins,
+                blockchainWalletData = primaryWallet,
+                tokenWalletData = state.primaryTokenData,
             ).setup()
         }
     }
 
     private fun setupTwinCards(twinCardsState: TwinCardsState?, binding: FragmentWalletBinding) = with(binding) {
-        twinCardsState?.cardNumber?.let { cardNumber ->
-            tvTwinCardNumber.show()
-            tvTwinCardNumber.text = tvTwinCardNumber.getQuantityString(R.plurals.card_label_card_count, 2)
-        }
         if (twinCardsState?.cardNumber == null) {
             tvTwinCardNumber.hide()
+        } else {
+            tvTwinCardNumber.show()
+            tvTwinCardNumber.text = tvTwinCardNumber.getQuantityString(R.plurals.card_label_card_count, 2)
         }
     }
 
     private fun setupButtons(
-        walletData: WalletData,
+        walletData: WalletDataModel,
         binding: FragmentWalletBinding,
         isExchangeServiceFeatureEnabled: Boolean,
     ) = with(binding) {
@@ -116,6 +128,8 @@ class SingleWalletView : WalletView() {
             }
         }
         lAddress.btnShowQr.setOnClickListener {
+            Analytics.send(Token.ShowWalletAddress)
+
             walletData.walletAddresses?.selectedAddress?.let { selectedAddress ->
                 store.dispatch(
                     WalletAction.DialogAction.QrCode(
@@ -128,11 +142,12 @@ class SingleWalletView : WalletView() {
     }
 
     private fun setupRowButtons(
-        walletData: WalletData,
+        walletData: WalletDataModel,
         rowButtons: WalletDetailsButtonsRow,
         isExchangeServiceFeatureEnabled: Boolean,
     ) {
         val swapInteractor = this.swapInteractor ?: return
+        val swapFeatureToggleManager = this.swapFeatureToggleManager ?: return
 
         val exchangeManager = store.state.globalState.exchangeManager
         binding?.rowButtons?.apply {
@@ -144,7 +159,7 @@ class SingleWalletView : WalletView() {
                     WalletAction.DialogAction.ChooseTradeActionDialog(
                         buyAllowed = walletData.isAvailableToBuy(exchangeManager),
                         sellAllowed = walletData.isAvailableToSell(exchangeManager),
-                        swapAllowed = walletData.isAvailableToSwap(swapInteractor, isExchangeServiceFeatureEnabled),
+                        swapAllowed = false, // always disable for single wallet
                     ),
                 )
             }
@@ -152,31 +167,33 @@ class SingleWalletView : WalletView() {
         val actions = walletData.getAvailableActions(
             swapInteractor = swapInteractor,
             exchangeManager = exchangeManager,
-            isExchangeFeatureOn = isExchangeServiceFeatureEnabled,
+            swapFeatureToggleManager = swapFeatureToggleManager,
+            isSingleWallet = true,
         )
         binding?.rowButtons?.updateButtonsVisibility(
             actions = actions,
             exchangeServiceFeatureOn = isExchangeServiceFeatureEnabled,
-            sendAllowed = walletData.mainButton.enabled,
+            sendAllowed = walletData.mainButton(walletData.status.amount).enabled,
         )
 
-        rowButtons.onSendClick = {
-            when (walletData.mainButton) {
-                is WalletMainButton.SendButton -> store.dispatch(WalletAction.Send())
-                is WalletMainButton.CreateWalletButton -> store.dispatch(WalletAction.CreateWallet)
-            }
-        }
+        rowButtons.onSendClick = { store.dispatch(WalletAction.Send()) }
     }
 
     private fun setupAddressCard(state: WalletState, binding: FragmentWalletBinding) = with(binding.lAddress) {
-        val primaryWallet = state.primaryWallet
+        val primaryWallet = state.primaryWalletData
+        if (primaryWallet == watchedPrimaryWalletForAddressCard) return@with
+        watchedPrimaryWalletForAddressCard = primaryWallet
+
         if (primaryWallet?.walletAddresses != null && primaryWallet.currency is Currency.Blockchain) {
             binding.lAddress.root.show()
             if (primaryWallet.shouldShowMultipleAddress()) {
                 (binding.lAddress.root as? ViewGroup)?.beginDelayedTransition()
                 chipGroupAddressType.show()
                 chipGroupAddressType.fitChipsByGroupWidth()
-                val checkedId = MultipleAddressUiHelper.typeToId(primaryWallet.walletAddresses.selectedAddress.type)
+                val checkedId = MultipleAddressUiHelper.typeToId(
+                    primaryWallet.walletAddresses.selectedAddress.type,
+                    primaryWallet.currency.blockchain,
+                )
                 if (checkedId != View.NO_ID) chipGroupAddressType.check(checkedId)
 
                 chipGroupAddressType.setOnCheckedChangeListener { group, checkedId ->
@@ -196,16 +213,16 @@ class SingleWalletView : WalletView() {
                     ),
                 )
             }
-            setupCardInfo(state)
+            setupCardInfo(primaryWallet)
         } else {
             binding.lAddress.root.hide()
         }
     }
 
-    private fun setupCardInfo(state: WalletState) {
+    private fun setupCardInfo(walletData: WalletDataModel) {
         val textView = binding?.lAddress?.tvInfo
-        val blockchain = state.primaryWallet?.currency?.blockchain
-        if (textView != null && blockchain != null) {
+        val blockchain = walletData.currency.blockchain
+        if (textView != null) {
             textView.text = textView.getString(
                 id = R.string.address_qr_code_message_format,
                 blockchain.fullName,

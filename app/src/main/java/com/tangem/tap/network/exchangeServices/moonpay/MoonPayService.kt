@@ -7,12 +7,10 @@ import com.tangem.common.services.Result
 import com.tangem.common.services.performRequest
 import com.tangem.datasource.api.common.createRetrofitInstance
 import com.tangem.domain.common.extensions.withIOContext
-import com.tangem.tap.common.extensions.urlEncode
 import com.tangem.tap.common.redux.global.CryptoCurrencyName
 import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.network.exchangeServices.CurrencyExchangeManager
 import com.tangem.tap.network.exchangeServices.ExchangeService
-import com.tangem.tap.network.exchangeServices.ExchangeUrlBuilder
 import com.tangem.tap.network.exchangeServices.ExchangeUrlBuilder.Companion.SCHEME
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -21,7 +19,7 @@ class MoonPayService(
     private val apiKey: String,
     private val secretKey: String,
     private val logEnabled: Boolean,
-) : ExchangeService, ExchangeUrlBuilder {
+) : ExchangeService {
 
     private val api: MoonPayApi by lazy {
         createRetrofitInstance(
@@ -103,40 +101,38 @@ class MoonPayService(
         blockchain: Blockchain,
         cryptoCurrencyName: CryptoCurrencyName,
         fatCurrency: String,
-        walletAddress: String
-    ): String? {
+        walletAddress: String,
+    ): String {
         if (action == CurrencyExchangeManager.Action.Buy) throw UnsupportedOperationException()
 
         val uri = Uri.Builder()
             .scheme(SCHEME)
             .authority(URL_SELL)
-            .appendQueryParameter("apiKey", apiKey.urlEncode())
-            .appendQueryParameter("baseCurrencyCode", cryptoCurrencyName.urlEncode())
-            .appendQueryParameter("refundWalletAddress", walletAddress.urlEncode())
-            .appendQueryParameter("redirectURL", "tangem://sell-request.tangem.com".urlEncode())
+            .appendQueryParameter("apiKey", apiKey)
+            .appendQueryParameter("baseCurrencyCode", cryptoCurrencyName)
+            .appendQueryParameter("refundWalletAddress", walletAddress)
+            .appendQueryParameter("redirectURL", "tangem://sell-request.tangem.com")
 
-        val originalQuery = uri.build().toString()
+        val originalQuery = uri.build().encodedQuery ?: uri.build().toString()
         val signature = createSignature(originalQuery)
-        uri.appendQueryParameter("signature", signature.urlEncode())
+        uri.appendQueryParameter("signature", signature)
 
-        val url = uri.build().toString()
-        return url
+        return uri.build().toString()
     }
 
-    override fun getSellCryptoReceiptUrl(action: CurrencyExchangeManager.Action, transactionId: String): String? {
-        val url = Uri.Builder()
+    override fun getSellCryptoReceiptUrl(action: CurrencyExchangeManager.Action, transactionId: String): String {
+        return Uri.Builder()
             .scheme(SCHEME)
             .authority(URL_SELL)
             .appendPath("transaction_receipt")
             .appendQueryParameter("transactionId", transactionId).build().toString()
-        return url
     }
 
     private fun createSignature(data: String): String {
         val sha256Hmac = Mac.getInstance("HmacSHA256")
         val secretKey = SecretKeySpec(secretKey.toByteArray(), "HmacSHA256")
         sha256Hmac.init(secretKey)
-        val sha256encoded = sha256Hmac.doFinal(data.toByteArray())
+        val sha256encoded = sha256Hmac.doFinal("?$data".toByteArray())
         return Base64.encodeToString(sha256encoded, Base64.NO_WRAP)
     }
 
@@ -148,5 +144,5 @@ class MoonPayService(
 private data class MoonPayStatus(
     val availableForSell: List<String>,
     val responseUserStatus: MoonPayUserStatus,
-    val responseCurrencies: List<MoonPayCurrencies>
+    val responseCurrencies: List<MoonPayCurrencies>,
 )

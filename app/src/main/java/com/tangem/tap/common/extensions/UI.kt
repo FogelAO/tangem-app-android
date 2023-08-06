@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.graphics.drawable.Drawable
-import android.util.DisplayMetrics
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -84,18 +83,11 @@ fun View.invisible(invisible: Boolean = true, invokeBeforeStateChanged: (() -> U
     }
 }
 
-fun Context.dpToPixels(dp: Int): Int =
-    TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP,
-        dp.toFloat(),
-        this.resources.displayMetrics,
-    ).toInt()
-
-fun Context.pixelsToDp(pixels: Int): Int {
-    return (pixels.toFloat() /
-        (resources.displayMetrics.densityDpi.toFloat() / DisplayMetrics.DENSITY_DEFAULT))
-        .toInt()
-}
+fun Context.dpToPixels(dp: Int): Int = TypedValue.applyDimension(
+    TypedValue.COMPLEX_UNIT_DIP,
+    dp.toFloat(),
+    this.resources.displayMetrics,
+).toInt()
 
 tailrec fun Context?.getActivity(): Activity? = this as? Activity
     ?: (this as? ContextWrapper)?.baseContext?.getActivity()
@@ -118,7 +110,7 @@ fun MaterialCardView.setMargins(
 
 fun View.hideKeyboard() {
     val inputMethodManager =
-        context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
     inputMethodManager?.hideSoftInputFromWindow(this.windowToken, 0)
 }
 
@@ -162,6 +154,7 @@ fun View.animateVisibility(
     hiddenVisibility: Int = View.GONE,
 ) {
     if (show) {
+        if (this.visibility == View.VISIBLE) return
         this.animate()
             .alpha(1f)
             .setDuration(durationMillis)
@@ -170,6 +163,7 @@ fun View.animateVisibility(
                 this.isVisible = true
             }
     } else {
+        if (this.visibility == hiddenVisibility) return
         this.animate()
             .alpha(0f)
             .setDuration(durationMillis)

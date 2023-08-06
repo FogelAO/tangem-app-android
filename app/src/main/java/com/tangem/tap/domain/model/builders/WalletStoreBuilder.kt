@@ -1,14 +1,14 @@
 package com.tangem.tap.domain.model.builders
 
 import com.tangem.blockchain.blockchains.polkadot.ExistentialDepositProvider
-import com.tangem.blockchain.common.Blockchain
-import com.tangem.blockchain.common.Token
-import com.tangem.blockchain.common.WalletManager
-import com.tangem.common.hdWallet.DerivationPath
-import com.tangem.domain.common.util.UserWalletId
+import com.tangem.blockchain.common.*
+import com.tangem.crypto.hdWallet.DerivationPath
+import com.tangem.domain.common.BlockchainNetwork
+import com.tangem.domain.common.TapWorkarounds.derivationStyle
+import com.tangem.domain.common.util.cardTypesResolver
+import com.tangem.domain.wallets.models.UserWallet
 import com.tangem.tap.domain.model.WalletDataModel
 import com.tangem.tap.domain.model.WalletStoreModel
-import com.tangem.tap.domain.tokens.models.BlockchainNetwork
 import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.features.wallet.redux.reducers.createAddressesData
 import java.math.BigDecimal
@@ -24,23 +24,20 @@ interface WalletStoreBuilder {
 
     companion object {
         operator fun invoke(
-            userWalletId: UserWalletId,
+            userWallet: UserWallet,
             blockchainNetwork: BlockchainNetwork,
         ): BlockchainNetworkWalletStoreBuilder {
-            return BlockchainNetworkWalletStoreBuilderImpl(userWalletId, blockchainNetwork)
+            return BlockchainNetworkWalletStoreBuilderImpl(userWallet, blockchainNetwork)
         }
 
-        operator fun invoke(
-            userWalletId: UserWalletId,
-            walletManager: WalletManager,
-        ): WalletMangerWalletStoreBuilder {
-            return WalletMangerWalletStoreBuilderImpl(userWalletId, walletManager)
+        operator fun invoke(userWallet: UserWallet, walletManager: WalletManager): WalletMangerWalletStoreBuilder {
+            return WalletMangerWalletStoreBuilderImpl(userWallet, walletManager)
         }
     }
 }
 
 private class BlockchainNetworkWalletStoreBuilderImpl(
-    private val userWalletId: UserWalletId,
+    private val userWallet: UserWallet,
     private val blockchainNetwork: BlockchainNetwork,
 ) : WalletStoreBuilder.BlockchainNetworkWalletStoreBuilder {
     private var walletManager: WalletManager? = null
@@ -50,11 +47,16 @@ private class BlockchainNetworkWalletStoreBuilderImpl(
     }
 
     override fun build(): WalletStoreModel {
-        val blockchainWalletData = blockchainNetwork.getBlockchainWalletData(walletManager)
-        val tokensWalletsData = blockchainNetwork.getTokensWalletsData(walletManager)
+        val cardDerivationStyle = userWallet.scanResponse.card.derivationStyle
+        val blockchainWalletData = blockchainNetwork.getBlockchainWalletData(walletManager, cardDerivationStyle)
+        val tokensWalletsData = blockchainNetwork.getTokensWalletsData(
+            walletManager = walletManager,
+            cardDerivationStyle = cardDerivationStyle,
+            primaryToken = userWallet.scanResponse.cardTypesResolver.getPrimaryToken(),
+        )
 
         return WalletStoreModel(
-            userWalletId = userWalletId,
+            userWalletId = userWallet.walletId,
             blockchain = blockchainNetwork.blockchain,
             derivationPath = blockchainNetwork.derivationPath?.let { DerivationPath(it) },
             walletsData = listOf(blockchainWalletData) + tokensWalletsData,
@@ -66,17 +68,20 @@ private class BlockchainNetworkWalletStoreBuilderImpl(
 }
 
 private class WalletMangerWalletStoreBuilderImpl(
-    private val userWalletId: UserWalletId,
+    private val userWallet: UserWallet,
     private val walletManager: WalletManager,
 ) : WalletStoreBuilder.WalletMangerWalletStoreBuilder {
 
     override fun build(): WalletStoreModel {
         val wallet = walletManager.wallet
         val blockchainWalletData = wallet.blockchain.toBlockchainWalletData(walletManager)
-        val tokenWalletsData = wallet.getTokens().firstOrNull()?.toTokenWalletData(walletManager)
+        val tokenWalletsData = wallet.getTokens().firstOrNull()?.toTokenWalletData(
+            walletManager = walletManager,
+            primaryToken = userWallet.scanResponse.cardTypesResolver.getPrimaryToken(),
+        )
 
         return WalletStoreModel(
-            userWalletId = userWalletId,
+            userWalletId = userWallet.walletId,
             blockchain = wallet.blockchain,
             derivationPath = wallet.publicKey.derivationPath,
             walletsData = listOf(blockchainWalletData) + listOfNotNull(tokenWalletsData),
@@ -87,34 +92,45 @@ private class WalletMangerWalletStoreBuilderImpl(
     }
 }
 
-private fun BlockchainNetwork.getBlockchainWalletData(walletManager: WalletManager?): WalletDataModel {
+private fun BlockchainNetwork.getBlockchainWalletData(
+    walletManager: WalletManager?,
+    cardDerivationStyle: DerivationStyle?,
+): WalletDataModel {
+    val currency = Currency.Blockchain(
+        blockchain = blockchain,
+        derivationPath = derivationPath,
+    )
     return WalletDataModel(
-        currency = Currency.Blockchain(
-            blockchain = blockchain,
-            derivationPath = derivationPath,
-        ),
+        currency = currency,
         status = WalletDataModel.Loading,
-        walletAddresses = walletManager?.wallet?.createAddressesData().orEmpty(),
+        walletAddresses = walletManager?.wallet?.getWalletAddresses(),
         existentialDeposit = getExistentialDeposit(walletManager),
         fiatRate = null,
         isCardSingleToken = false,
+        isCustom = currency.isCustomCurrency(cardDerivationStyle),
     )
 }
 
-private fun BlockchainNetwork.getTokensWalletsData(walletManager: WalletManager?): List<WalletDataModel> {
+private fun BlockchainNetwork.getTokensWalletsData(
+    walletManager: WalletManager?,
+    cardDerivationStyle: DerivationStyle?,
+    primaryToken: Token?,
+): List<WalletDataModel> {
     return this.tokens
         .map { token ->
+            val currency = Currency.Token(
+                token = token,
+                blockchain = blockchain,
+                derivationPath = derivationPath,
+            )
             WalletDataModel(
-                currency = Currency.Token(
-                    token = token,
-                    blockchain = blockchain,
-                    derivationPath = derivationPath,
-                ),
+                currency = currency,
                 status = WalletDataModel.Loading,
-                walletAddresses = walletManager?.wallet?.createAddressesData().orEmpty(),
+                walletAddresses = walletManager?.wallet?.getWalletAddresses(),
                 existentialDeposit = getExistentialDeposit(walletManager),
                 fiatRate = null,
-                isCardSingleToken = walletManager?.cardTokens?.contains(token) ?: false,
+                isCardSingleToken = token == primaryToken,
+                isCustom = currency.isCustomCurrency(cardDerivationStyle),
             )
         }
 }
@@ -127,14 +143,15 @@ private fun Blockchain.toBlockchainWalletData(walletManager: WalletManager): Wal
             derivationPath = wallet.publicKey.derivationPath?.rawPath,
         ),
         status = WalletDataModel.Loading,
-        walletAddresses = wallet.createAddressesData(),
+        walletAddresses = wallet.getWalletAddresses(),
         existentialDeposit = getExistentialDeposit(walletManager),
         fiatRate = null,
         isCardSingleToken = false,
+        isCustom = false,
     )
 }
 
-private fun Token.toTokenWalletData(walletManager: WalletManager): WalletDataModel {
+private fun Token.toTokenWalletData(walletManager: WalletManager, primaryToken: Token?): WalletDataModel {
     val wallet = walletManager.wallet
     return WalletDataModel(
         currency = Currency.Token(
@@ -143,13 +160,25 @@ private fun Token.toTokenWalletData(walletManager: WalletManager): WalletDataMod
             derivationPath = wallet.publicKey.derivationPath?.rawPath,
         ),
         status = WalletDataModel.Loading,
-        walletAddresses = wallet.createAddressesData(),
+        walletAddresses = wallet.getWalletAddresses(),
         existentialDeposit = getExistentialDeposit(walletManager),
         fiatRate = null,
-        isCardSingleToken = walletManager.cardTokens.contains(this),
+        isCardSingleToken = this == primaryToken,
+        isCustom = false,
     )
 }
 
 private fun getExistentialDeposit(walletManager: WalletManager?): BigDecimal? {
     return (walletManager as? ExistentialDepositProvider)?.getExistentialDeposit()
+}
+
+private fun Wallet.getWalletAddresses(): WalletDataModel.WalletAddresses? {
+    return this.createAddressesData()
+        .takeIf { it.isNotEmpty() }
+        ?.let { addresses ->
+            WalletDataModel.WalletAddresses(
+                list = addresses,
+                selectedAddress = addresses.first(),
+            )
+        }
 }

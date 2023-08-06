@@ -1,22 +1,18 @@
 package com.tangem.tap.domain.walletCurrencies.implementation
 
-import com.tangem.blockchain.common.Blockchain
 import com.tangem.blockchain.common.DerivationStyle
-import com.tangem.common.CompletionResult
-import com.tangem.common.flatMap
-import com.tangem.common.fold
-import com.tangem.common.map
-import com.tangem.domain.common.CardDTO
+import com.tangem.common.*
+import com.tangem.domain.common.BlockchainNetwork
 import com.tangem.domain.common.TapWorkarounds.derivationStyle
-import com.tangem.domain.common.util.UserWalletId
+import com.tangem.domain.models.scan.CardDTO
+import com.tangem.domain.wallets.legacy.WalletManagersRepository
+import com.tangem.domain.wallets.models.UserWallet
+import com.tangem.domain.wallets.models.UserWalletId
 import com.tangem.tap.common.entities.FiatCurrency
-import com.tangem.tap.domain.model.UserWallet
 import com.tangem.tap.domain.model.builders.WalletStoreBuilder
 import com.tangem.tap.domain.tokens.UserTokensRepository
-import com.tangem.tap.domain.tokens.models.BlockchainNetwork
 import com.tangem.tap.domain.walletCurrencies.WalletCurrenciesManager
 import com.tangem.tap.domain.walletStores.repository.WalletAmountsRepository
-import com.tangem.tap.domain.walletStores.repository.WalletManagersRepository
 import com.tangem.tap.domain.walletStores.repository.WalletStoresRepository
 import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.features.wallet.models.toBlockchainNetworks
@@ -31,41 +27,56 @@ internal class DefaultWalletCurrenciesManager(
     private val walletManagersRepository: WalletManagersRepository,
     private val appCurrencyProvider: () -> FiatCurrency,
 ) : WalletCurrenciesManager {
-    override suspend fun update(
-        userWallet: UserWallet,
-        currency: Currency,
-    ): CompletionResult<Unit> = withContext(Dispatchers.Default) {
-        val walletStore = walletStoresRepository.getSync(userWallet.walletId)
-            .find {
-                it.blockchain == currency.blockchain &&
-                    it.derivationPath?.rawPath == currency.derivationPath
-            }
 
-        if (walletStore != null) {
-            walletAmountsRepository.updateAmountsForWalletStore(
-                walletStore = walletStore,
-                userWallet = userWallet,
-                fiatCurrency = appCurrencyProvider(),
-            )
-        } else CompletionResult.Success(Unit)
-    }
+    private val listeners = mutableListOf<WalletCurrenciesManager.Listener>()
+
+    override suspend fun update(userWallet: UserWallet, currency: Currency): CompletionResult<Unit> =
+        withContext(Dispatchers.Default) {
+            listeners.forEach { it.willUpdate(userWallet, currency) }
+            val walletStore = walletStoresRepository.getSync(userWallet.walletId)
+                .find {
+                    it.blockchain == currency.blockchain &&
+                        it.derivationPath?.rawPath == currency.derivationPath
+                }
+
+            val updateResult = if (walletStore == null) {
+                CompletionResult.Success(Unit)
+            } else {
+                walletAmountsRepository.updateAmountsForWalletStore(
+                    walletStore = walletStore,
+                    userWallet = userWallet,
+                    fiatCurrency = appCurrencyProvider(),
+                )
+            }
+            listeners.forEach { it.didUpdate(userWallet, currency) }
+            updateResult
+        }
 
     override suspend fun addCurrencies(
         userWallet: UserWallet,
         currenciesToAdd: List<Currency>,
     ): CompletionResult<Unit> = withContext(Dispatchers.Default) {
-        val card = userWallet.scanResponse.card
-        val newCurrencies = (getSavedCurrencies(userWallet.walletId) + currenciesToAdd)
-            .addMissingBlockchains(card)
+        if (currenciesToAdd.isEmpty()) {
+            return@withContext CompletionResult.Success(Unit)
+        }
 
-        updateWalletStores(userWallet, newCurrencies.toBlockchainNetworks())
+        val card = userWallet.scanResponse.card
+        val currenciesToAddWithMissingBlockchains = currenciesToAdd.addMissingBlockchainsIfNeeded(card)
+        listeners.forEach { it.willCurrenciesAdd(userWallet, currenciesToAddWithMissingBlockchains) }
+
+        updateWalletStores(
+            userWallet = userWallet,
+            blockchainNetworks = currenciesToAddWithMissingBlockchains
+                .toBlockchainNetworks()
+                .addSameBlockchainTokens(userWallet.walletId),
+        )
             .map {
-                saveUserCurrencies(card, newCurrencies)
+                saveUserCurrencies(card, getSavedCurrencies(userWallet.walletId))
             }
             .flatMap {
                 updateWalletStoresAmounts(
                     userWallet = userWallet,
-                    updatedBlockchains = currenciesToAdd.map { it.blockchain }.distinct(),
+                    updatedCurrencies = currenciesToAddWithMissingBlockchains,
                 )
             }
     }
@@ -74,27 +85,37 @@ internal class DefaultWalletCurrenciesManager(
         userWallet: UserWallet,
         currenciesToRemove: List<Currency>,
     ): CompletionResult<Unit> = withContext(Dispatchers.Default) {
+        if (currenciesToRemove.isEmpty()) {
+            return@withContext CompletionResult.Success(Unit)
+        }
+
+        listeners.forEach { it.willCurrenciesRemove(userWallet, currenciesToRemove) }
         val card = userWallet.scanResponse.card
         val remainingCurrencies = getSavedCurrencies(userWallet.walletId)
             .filter { it !in currenciesToRemove }
         val remainingBlockchains = remainingCurrencies
             .filterIsInstance<Currency.Blockchain>()
-            .map { it.blockchain }
 
         walletStoresRepository.deleteDifference(userWallet.walletId, remainingBlockchains)
             .flatMap {
                 updateWalletStores(userWallet, remainingCurrencies.toBlockchainNetworks())
             }
-            .map {
+            .doOnResult {
                 saveUserCurrencies(card, remainingCurrencies)
             }
     }
 
-    override suspend fun removeCurrency(
-        userWallet: UserWallet,
-        currencyToRemove: Currency,
-    ): CompletionResult<Unit> {
+    override suspend fun removeCurrency(userWallet: UserWallet, currencyToRemove: Currency): CompletionResult<Unit> {
+        listeners.forEach { it.willCurrencyRemove(userWallet, currencyToRemove) }
         return removeCurrencies(userWallet, listOf(currencyToRemove))
+    }
+
+    override fun addListener(listener: WalletCurrenciesManager.Listener) {
+        listeners.add(listener)
+    }
+
+    override fun removeListener(listener: WalletCurrenciesManager.Listener) {
+        listeners.remove(listener)
     }
 
     private suspend fun getSavedCurrencies(userWalletId: UserWalletId): List<Currency> {
@@ -115,51 +136,88 @@ internal class DefaultWalletCurrenciesManager(
         }
     }
 
-    private fun List<Currency>.addMissingBlockchains(card: CardDTO): List<Currency> {
-        val newCurrencies = arrayListOf<Currency>()
+    // TODO: Need refactoring
+    private suspend fun List<BlockchainNetwork>.addSameBlockchainTokens(
+        userWalletId: UserWalletId,
+    ): List<BlockchainNetwork> {
+        val networks = arrayListOf<BlockchainNetwork>()
+        val savedWalletStores = withContext(Dispatchers.Default) {
+            walletStoresRepository.getSync(userWalletId)
+        }
 
-        this
-            .groupBy { it.blockchain }
-            .forEach { (blockchain, currencies) ->
-                val rawDerivationPath: String?
-                val blockchainCurrency = currencies
-                    .firstOrNull { it is Currency.Blockchain }
-                    as? Currency.Blockchain
-
-                // Add blockchain currency
-                if (blockchainCurrency != null) {
-                    rawDerivationPath = findDerivationPath(blockchainCurrency, card.derivationStyle)
-                    newCurrencies.add(blockchainCurrency.copy(derivationPath = rawDerivationPath))
-                } else {
-                    rawDerivationPath = findDerivationPath(currencies.first(), card.derivationStyle)
-                    newCurrencies.add(
-                        Currency.Blockchain(
-                            blockchain = blockchain,
-                            derivationPath = rawDerivationPath,
-                        ),
-                    )
-                }
-
-                // Add tokens currencies
-                currencies
-                    .filterIsInstance<Currency.Token>()
-                    .forEach { currency ->
-                        newCurrencies.add(currency.copy(derivationPath = rawDerivationPath))
-                    }
+        this.forEach { network ->
+            val walletStore = savedWalletStores.firstOrNull {
+                it.blockchain == network.blockchain && it.derivationPath?.rawPath == network.derivationPath
             }
 
-        return newCurrencies
+            if (walletStore != null) {
+                val tokens = walletStore.walletsData
+                    .asSequence()
+                    .map { it.currency }
+                    .filterIsInstance<Currency.Token>()
+                    .map { it.token }
+                    .toList()
+
+                networks.add(network.copy(tokens = tokens + network.tokens.toSet()))
+            } else {
+                networks.add(network)
+            }
+        }
+
+        return networks
     }
 
-    private fun findDerivationPath(currency: Currency, cardDerivationStyle: DerivationStyle?): String? {
-        return currency.derivationPath ?: currency.blockchain.derivationPath(cardDerivationStyle)?.rawPath
+    private fun List<Currency>.addMissingBlockchainsIfNeeded(card: CardDTO): List<Currency> {
+        if (this.isEmpty()) return this
+        val currencies = this.asSequence()
+
+        return currencies
+            .groupBy { currency ->
+                findBlockchainCurrency(currency, currencies, card.derivationStyle)
+            }
+            .mapValues { (blockchainCurrency, blockchainCurrencies) ->
+                findBlockchainTokens(blockchainCurrency, blockchainCurrencies)
+            }
+            .flatMap { (blockchainCurrency, blockchainTokens) ->
+                arrayListOf(blockchainCurrency) + blockchainTokens
+            }
+    }
+
+    private fun findBlockchainCurrency(
+        currency: Currency,
+        currencies: Sequence<Currency>,
+        cardDerivationStyle: DerivationStyle?,
+    ): Currency.Blockchain {
+        return currencies
+            .filterIsInstance<Currency.Blockchain>()
+            .firstOrNull {
+                it.blockchain == currency.blockchain &&
+                    it.derivationPath == currency.derivationPath
+            }
+            ?: Currency.Blockchain(
+                blockchain = currency.blockchain,
+                derivationPath = currency.derivationPath
+                    ?: currency.blockchain.derivationPath(cardDerivationStyle)?.rawPath,
+            )
+    }
+
+    private fun findBlockchainTokens(
+        blockchainCurrency: Currency.Blockchain,
+        blockchainCurrencies: List<Currency>,
+    ): List<Currency.Token> {
+        return blockchainCurrencies
+            .filterIsInstance<Currency.Token>()
+            .map { token ->
+                token.copy(
+                    derivationPath = token.derivationPath ?: blockchainCurrency.derivationPath,
+                )
+            }
     }
 
     private suspend fun updateWalletStores(
         userWallet: UserWallet,
         blockchainNetworks: List<BlockchainNetwork>,
     ): CompletionResult<Unit> {
-        val userWalletId = userWallet.walletId
         return blockchainNetworks
             .map { blockchainNetwork ->
                 walletManagersRepository.findOrMakeMultiCurrencyWalletManager(
@@ -168,8 +226,8 @@ internal class DefaultWalletCurrenciesManager(
                 )
                     .flatMap { walletManager ->
                         walletStoresRepository.storeOrUpdate(
-                            userWalletId = userWalletId,
-                            walletStore = WalletStoreBuilder(userWalletId, blockchainNetwork)
+                            userWalletId = userWallet.walletId,
+                            walletStore = WalletStoreBuilder(userWallet, blockchainNetwork)
                                 .walletManager(walletManager)
                                 .build(),
                         )
@@ -180,11 +238,13 @@ internal class DefaultWalletCurrenciesManager(
 
     private suspend fun updateWalletStoresAmounts(
         userWallet: UserWallet,
-        updatedBlockchains: List<Blockchain>,
+        updatedCurrencies: List<Currency>,
     ): CompletionResult<Unit> {
+        val updatedBlockchains = updatedCurrencies
+            .filterIsInstance<Currency.Blockchain>()
         val updatedWalletStores = walletStoresRepository.get(userWallet.walletId)
             .firstOrNull()
-            ?.filter { it.blockchain in updatedBlockchains }
+            ?.filter { it.blockchainWalletData.currency in updatedBlockchains }
             ?: return CompletionResult.Success(Unit)
 
         return walletAmountsRepository.updateAmountsForWalletStores(

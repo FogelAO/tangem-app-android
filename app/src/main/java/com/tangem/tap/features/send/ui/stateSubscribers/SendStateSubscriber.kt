@@ -7,46 +7,32 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.text.bold
 import com.tangem.common.extensions.remove
-import com.tangem.tap.common.extensions.beginDelayedTransition
-import com.tangem.tap.common.extensions.enableError
-import com.tangem.tap.common.extensions.getColor
-import com.tangem.tap.common.extensions.getString
-import com.tangem.tap.common.extensions.hide
-import com.tangem.tap.common.extensions.show
-import com.tangem.tap.common.extensions.update
+import com.tangem.tap.common.extensions.*
 import com.tangem.tap.common.redux.getMessageString
 import com.tangem.tap.common.text.DecimalDigitsInputFilter
 import com.tangem.tap.domain.MultiMessageError
 import com.tangem.tap.domain.assembleErrors
 import com.tangem.tap.features.BaseStoreFragment
-import com.tangem.tap.features.send.redux.AddressPayIdVerifyAction.Error
+import com.tangem.tap.features.send.redux.AddressVerifyAction.Error
 import com.tangem.tap.features.send.redux.SendAction
-import com.tangem.tap.features.send.redux.states.AddressPayIdState
-import com.tangem.tap.features.send.redux.states.AmountState
-import com.tangem.tap.features.send.redux.states.FeeState
-import com.tangem.tap.features.send.redux.states.MainCurrencyType
-import com.tangem.tap.features.send.redux.states.ReceiptLayoutType
-import com.tangem.tap.features.send.redux.states.ReceiptState
-import com.tangem.tap.features.send.redux.states.SendState
-import com.tangem.tap.features.send.redux.states.StateId
-import com.tangem.tap.features.send.redux.states.TransactionExtraError
-import com.tangem.tap.features.send.redux.states.TransactionExtrasState
+import com.tangem.tap.features.send.redux.states.*
 import com.tangem.tap.features.send.ui.FeeUiHelper
 import com.tangem.tap.features.send.ui.SendFragment
+import com.tangem.tap.features.send.ui.dialogs.KaspaWarningDialog
 import com.tangem.tap.features.send.ui.dialogs.RequestFeeErrorDialog
 import com.tangem.tap.features.send.ui.dialogs.SendTransactionFailsDialog
 import com.tangem.tap.features.send.ui.dialogs.TezosWarningDialog
 import com.tangem.tap.features.wallet.redux.ProgressState
-import com.tangem.tap.features.wallet.redux.WalletState.Companion.ROUGH_SIGN
-import com.tangem.tap.features.wallet.redux.WalletState.Companion.UNKNOWN_AMOUNT_SIGN
+import com.tangem.tap.features.wallet.redux.utils.ROUGH_SIGN
+import com.tangem.tap.features.wallet.redux.utils.UNKNOWN_AMOUNT_SIGN
 import com.tangem.tap.features.wallet.ui.adapters.WarningMessagesAdapter
 import com.tangem.wallet.R
 
 /**
  * Created by Anton Zhilenkov on 31/08/2020.
  */
-class SendStateSubscriber(fragment: BaseStoreFragment) :
-    FragmentStateSubscriber<SendState>(fragment) {
+@Suppress("LargeClass")
+class SendStateSubscriber(fragment: BaseStoreFragment) : FragmentStateSubscriber<SendState>(fragment) {
 
     private var dialog: Dialog? = null
 
@@ -60,7 +46,7 @@ class SendStateSubscriber(fragment: BaseStoreFragment) :
         lastChangedStates.forEach {
             when (it) {
                 StateId.SEND_SCREEN -> handleSendScreen(fg, state)
-                StateId.ADDRESS_PAY_ID -> handleAddressPayIdState(fg, state.addressPayIdState)
+                StateId.ADDRESS_PAY_ID -> handleAddressState(fg, state.addressState)
                 StateId.TRANSACTION_EXTRAS -> handleTransactionExtrasState(fg, state.transactionExtrasState)
                 StateId.AMOUNT -> handleAmountState(fg, state.amountState)
                 StateId.FEE -> handleFeeState(fg, state.feeState)
@@ -71,13 +57,15 @@ class SendStateSubscriber(fragment: BaseStoreFragment) :
 
     @Suppress("ComplexMethod")
     private fun handleTransactionExtrasState(fg: SendFragment, infoState: TransactionExtrasState) =
-        with(fg.binding.lSendAddressPayid) {
+        with(fg.binding.lSendAddress) {
             fun showView(view: View, info: Any?) {
                 view.show(info != null)
             }
             showView(xlmMemoContainer, infoState.xlmMemo)
             showView(xrpDestinationTagContainer, infoState.xrpDestinationTag)
             showView(binanceMemoContainer, infoState.binanceMemo)
+            showView(tonMemoContainer, infoState.tonMemoState)
+            showView(cosmosMemoContainer, infoState.cosmosMemoState)
 
             infoState.xlmMemo?.let {
                 if (!it.viewFieldValue.isFromUserInput) etXlmMemo.setText(it.viewFieldValue.value)
@@ -114,6 +102,26 @@ class SendStateSubscriber(fragment: BaseStoreFragment) :
                     etBinanceMemo.setText(it.viewFieldValue.value)
                 }
             }
+            infoState.tonMemoState?.let {
+                if (infoState.tonMemoState.error != null) {
+                    tilTonMemo.error = fg.getText(R.string.send_extras_error_invalid_memo)
+                } else {
+                    tilBinanceMemo.error = null
+                }
+                if (!it.viewFieldValue.isFromUserInput) {
+                    etTonMemo.setText(it.viewFieldValue.value)
+                }
+            }
+            infoState.cosmosMemoState?.let {
+                if (infoState.cosmosMemoState.error != null) {
+                    tilCosmosMemo.error = fg.getText(R.string.send_extras_error_invalid_memo)
+                } else {
+                    tilBinanceMemo.error = null
+                }
+                if (!it.viewFieldValue.isFromUserInput) {
+                    etCosmosMemo.setText(it.viewFieldValue.value)
+                }
+            }
         }
 
     private fun handleSendScreen(fg: SendFragment, state: SendState) = with(fg.binding) {
@@ -121,6 +129,12 @@ class SendStateSubscriber(fragment: BaseStoreFragment) :
             is SendAction.Dialog.TezosWarningDialog -> {
                 if (dialog == null) {
                     dialog = TezosWarningDialog.create(fg.requireContext(), state.dialog)
+                    dialog?.show()
+                }
+            }
+            is SendAction.Dialog.KaspaWarningDialog -> {
+                if (dialog == null) {
+                    dialog = KaspaWarningDialog.create(fg.requireContext(), state.dialog)
                     dialog?.show()
                 }
             }
@@ -163,13 +177,10 @@ class SendStateSubscriber(fragment: BaseStoreFragment) :
         )
     }
 
-    private fun handleAddressPayIdState(fg: SendFragment, state: AddressPayIdState) =
-        with(fg.binding.lSendAddressPayid) {
+    private fun handleAddressState(fg: SendFragment, state: AddressState) {
+        with(fg.binding.lSendAddress) {
             fun parseError(context: Context, error: Error?): String? {
                 val resId = when (error) {
-                    Error.PAY_ID_UNSUPPORTED_BY_BLOCKCHAIN -> R.string.send_error_payid_unsupported_by_blockchain
-                    Error.PAY_ID_NOT_REGISTERED -> R.string.send_error_payid_not_registered
-                    Error.PAY_ID_REQUEST_FAILED -> R.string.send_error_payid_request_failed
                     Error.ADDRESS_INVALID_OR_UNSUPPORTED_BY_BLOCKCHAIN -> R.string.send_validation_invalid_address
                     Error.ADDRESS_SAME_AS_WALLET -> R.string.send_error_address_same_as_wallet
                     else -> null
@@ -179,8 +190,8 @@ class SendStateSubscriber(fragment: BaseStoreFragment) :
 
             imvPaste.isEnabled = state.pasteIsEnabled
 
-            val et = etAddressOrPayId
-            val til = tilAddressOrPayId
+            val et = etAddress
+            val til = tilAddress
             val parsedError = parseError(til.context, state.error)
 
             til.isEnabled = state.inputIsEnabled
@@ -189,19 +200,15 @@ class SendStateSubscriber(fragment: BaseStoreFragment) :
             flPaste.show(state.inputIsEnabled)
             flQrCode.show(state.inputIsEnabled)
 
-            val hintResId = if (state.sendingToPayIdEnabled) {
-                R.string.send_destination_hint_address_payid
-            } else {
-                R.string.send_destination_hint_address
-            }
-            til.hint = til.getString(hintResId)
+            til.hint = til.getString(R.string.send_destination_hint_address)
             til.error = parsedError
             til.isErrorEnabled = parsedError != null
             til.helperText = state.destinationWalletAddress
-            til.isHelperTextEnabled = state.isPayIdState() && parsedError == null
+            til.isHelperTextEnabled = parsedError == null
 
             if (!state.viewFieldValue.isFromUserInput) et.update(state.viewFieldValue.value)
         }
+    }
 
     private fun handleAmountState(fg: SendFragment, state: AmountState) = with(fg.binding.lSendAmount) {
         if (state.error != null) {
@@ -270,104 +277,111 @@ class SendStateSubscriber(fragment: BaseStoreFragment) :
     }
 
     @Suppress("LongMethod", "ComplexMethod")
-    private fun handleReceiptState(
-        fg: SendFragment,
-        state: ReceiptState,
-        feeProgressState: ProgressState,
-    ) = with(fg.binding.clReceiptContainer) {
-        val mainLayout = clReceiptContainer as ViewGroup
-        val totalLayout = llTotalContainer.llTotal as ViewGroup
-        val totalTokenLayout = llTotalContainer.flTotalTokenCrypto as ViewGroup
+    private fun handleReceiptState(fg: SendFragment, state: ReceiptState, feeProgressState: ProgressState) =
+        with(fg.binding.clReceiptContainer) {
+            val mainLayout = clReceiptContainer as ViewGroup
+            val totalLayout = llTotalContainer.llTotal as ViewGroup
+            val totalTokenLayout = llTotalContainer.flTotalTokenCrypto as ViewGroup
 
-        fun getString(id: Int, vararg formatStrings: String): String = mainLayout.getString(id, *formatStrings)
+            fun getString(id: Int, vararg formatStrings: String): String = mainLayout.getString(id, *formatStrings)
 
-        fun roughOrEmpty(value: String): String {
-            return if (value == UNKNOWN_AMOUNT_SIGN) value else "$ROUGH_SIGN $value"
-        }
-
-        when (feeProgressState) {
-            ProgressState.Loading -> {
-                tvReceiptFeeValue.hide()
-                pbReceiptFee.show()
+            fun roughOrEmpty(value: String): String {
+                return if (value == UNKNOWN_AMOUNT_SIGN) value else "$ROUGH_SIGN $value"
             }
-            ProgressState.Done -> {
-                pbReceiptFee.hide()
-                tvReceiptFeeValue.show()
-            }
-            else -> {}
-        }
 
-        when (state.visibleTypeOfReceipt) {
-            ReceiptLayoutType.FIAT -> {
-                val receipt = state.fiat ?: return
-
-                totalLayout.show(true)
-                totalTokenLayout.show(false)
-                tvReceiptAmountValue.update("${receipt.amountFiat} ${receipt.symbols.fiat}")
-                tvReceiptFeeValue.update("${receipt.feeFiat} ${receipt.symbols.fiat}")
-                llTotalContainer.tvTotalValue.update("${roughOrEmpty(receipt.totalFiat)} ${receipt.symbols.fiat}")
-
-                val willSent = getString(
-                    R.string.send_total_subtitle_format,
-                    "${receipt.willSentCrypto} ${receipt.symbols.crypto}",
-                )
-                llTotalContainer.tvWillBeSentValue.update(willSent)
-            }
-            ReceiptLayoutType.CRYPTO -> {
-                val receipt = state.crypto ?: return
-
-                totalLayout.show(true)
-                totalTokenLayout.show(false)
-                tvReceiptAmountValue.update("${receipt.amountCrypto} ${receipt.symbols.crypto}")
-                tvReceiptFeeValue.update("${receipt.feeCrypto} ${receipt.symbols.crypto}")
-                llTotalContainer.tvTotalValue.update("${receipt.totalCrypto} ${receipt.symbols.crypto}")
-
-                if (receipt.willSentFiat == UNKNOWN_AMOUNT_SIGN) {
-                    llTotalContainer.tvWillBeSentValue.hide()
-                } else {
-                    llTotalContainer.tvWillBeSentValue.show()
-                    llTotalContainer.tvWillBeSentValue.update(
-                        getString(
-                            R.string.send_total_subtitle_fiat_format,
-                            "${receipt.willSentFiat} ${receipt.symbols.fiat}",
-                            "${receipt.feeFiat} ${receipt.symbols.fiat}",
-                        ),
-                    )
+            when (feeProgressState) {
+                ProgressState.Loading -> {
+                    tvReceiptFeeValue.hide()
+                    pbReceiptFee.show()
                 }
+                ProgressState.Done -> {
+                    pbReceiptFee.hide()
+                    tvReceiptFeeValue.show()
+                }
+                else -> {}
             }
-            ReceiptLayoutType.TOKEN_FIAT -> {
-                val receipt = state.tokenFiat ?: return
 
-                totalLayout.show(true)
-                totalTokenLayout.show(false)
-                tvReceiptAmountValue.update("${receipt.amountFiat} ${receipt.symbols.fiat}")
-                tvReceiptFeeValue.update("${receipt.feeFiat} ${receipt.symbols.fiat}")
-                llTotalContainer.tvTotalValue.update("${roughOrEmpty(receipt.totalFiat)} ${receipt.symbols.fiat}")
+            when (state.visibleTypeOfReceipt) {
+                ReceiptLayoutType.FIAT -> {
+                    val receipt = state.fiat ?: return
 
-                val willSent = getString(
-                    R.string.send_total_subtitle_asset_format,
-                    "${receipt.symbols.token ?: ""} ${receipt.willSentToken}",
-                    "${receipt.symbols.crypto} ${receipt.willSentFeeCoin}",
-                )
-                llTotalContainer.tvWillBeSentValue.update(willSent)
-            }
-            ReceiptLayoutType.TOKEN_CRYPTO -> {
-                val receipt = state.tokenCrypto ?: return
-
-                totalLayout.show(false)
-                totalTokenLayout.show(true)
-
-                tvReceiptAmountValue.update("${receipt.amountToken} ${receipt.symbols.token}")
-                tvReceiptFeeValue.update("${receipt.feeCoin} ${receipt.symbols.crypto}")
-
-                val willSent = SpannableStringBuilder()
-                    .bold {
-                        append(roughOrEmpty(receipt.totalFiat)).append(" ")
-                        append(receipt.symbols.fiat)
+                    totalLayout.show(true)
+                    totalTokenLayout.show(false)
+                    tvReceiptAmountValue.update("${receipt.amountFiat} ${receipt.symbols.fiat}")
+                    tvReceiptFeeValue.update("${receipt.feeFiat} ${receipt.symbols.fiat}")
+                    llTotalContainer.tvTotalValue.post {
+                        llTotalContainer.tvTotalValue.update(
+                            "${roughOrEmpty(receipt.totalFiat)} ${receipt.symbols.fiat}",
+                        )
                     }
-                llTotalContainer.tvTotalTokenCryptoValue.update(willSent.toString())
+
+                    val willSent = getString(
+                        R.string.send_total_subtitle_format,
+                        "${receipt.willSentCrypto} ${receipt.symbols.crypto}",
+                    )
+                    llTotalContainer.tvWillBeSentValue.update(willSent)
+                }
+                ReceiptLayoutType.CRYPTO -> {
+                    val receipt = state.crypto ?: return
+
+                    totalLayout.show(true)
+                    totalTokenLayout.show(false)
+                    tvReceiptAmountValue.update("${receipt.amountCrypto} ${receipt.symbols.crypto}")
+                    tvReceiptFeeValue.update("${receipt.feeCrypto} ${receipt.symbols.crypto}")
+                    llTotalContainer.tvTotalValue.post {
+                        llTotalContainer.tvTotalValue.update("${receipt.totalCrypto} ${receipt.symbols.crypto}")
+                    }
+
+                    if (receipt.willSentFiat == UNKNOWN_AMOUNT_SIGN) {
+                        llTotalContainer.tvWillBeSentValue.hide()
+                    } else {
+                        llTotalContainer.tvWillBeSentValue.show()
+                        llTotalContainer.tvWillBeSentValue.update(
+                            getString(
+                                R.string.send_total_subtitle_fiat_format,
+                                "${receipt.willSentFiat} ${receipt.symbols.fiat}",
+                                "${receipt.feeFiat} ${receipt.symbols.fiat}",
+                            ),
+                        )
+                    }
+                }
+                ReceiptLayoutType.TOKEN_FIAT -> {
+                    val receipt = state.tokenFiat ?: return
+
+                    totalLayout.show(true)
+                    totalTokenLayout.show(false)
+                    tvReceiptAmountValue.update("${receipt.amountFiat} ${receipt.symbols.fiat}")
+                    tvReceiptFeeValue.update("${receipt.feeFiat} ${receipt.symbols.fiat}")
+                    llTotalContainer.tvTotalValue.post {
+                        llTotalContainer.tvTotalValue.update(
+                            "${roughOrEmpty(receipt.totalFiat)} ${receipt.symbols.fiat}",
+                        )
+                    }
+
+                    val willSent = getString(
+                        R.string.send_total_subtitle_asset_format,
+                        "${receipt.symbols.token ?: ""} ${receipt.willSentToken}",
+                        "${receipt.symbols.crypto} ${receipt.willSentFeeCoin}",
+                    )
+                    llTotalContainer.tvWillBeSentValue.update(willSent)
+                }
+                ReceiptLayoutType.TOKEN_CRYPTO -> {
+                    val receipt = state.tokenCrypto ?: return
+
+                    totalLayout.show(false)
+                    totalTokenLayout.show(true)
+
+                    tvReceiptAmountValue.update("${receipt.amountToken} ${receipt.symbols.token}")
+                    tvReceiptFeeValue.update("${receipt.feeCoin} ${receipt.symbols.crypto}")
+
+                    val willSent = SpannableStringBuilder()
+                        .bold {
+                            append(roughOrEmpty(receipt.totalFiat)).append(" ")
+                            append(receipt.symbols.fiat)
+                        }
+                    llTotalContainer.tvTotalTokenCryptoValue.update(willSent.toString())
+                }
+                else -> {}
             }
-            else -> {}
         }
-    }
 }

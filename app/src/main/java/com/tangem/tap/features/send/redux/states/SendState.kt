@@ -34,7 +34,7 @@ data class SendState(
     val coinConverter: CurrencyConverter? = null,
     val tokenConverter: CurrencyConverter? = null,
     val lastChangedStates: LinkedHashSet<StateId> = linkedSetOf(),
-    val addressPayIdState: AddressPayIdState = AddressPayIdState(),
+    val addressState: AddressState = AddressState(),
     val transactionExtrasState: TransactionExtrasState = TransactionExtrasState(),
     val amountState: AmountState = AmountState(),
     val feeState: FeeState = FeeState(),
@@ -52,7 +52,7 @@ data class SendState(
         MainCurrencyType.CRYPTO -> amountState.amountToExtract?.decimals ?: 0
     }
 
-    fun convertFiatToCoin(value: BigDecimal): BigDecimal {
+    private fun convertFiatToCoin(value: BigDecimal): BigDecimal {
         return if (!this.coinIsConvertible()) value else coinConverter!!.toCrypto(value)
     }
 
@@ -60,14 +60,14 @@ data class SendState(
         return if (!this.tokenIsConvertible()) value else tokenConverter!!.toCrypto(value)
     }
 
-    fun convertCoinToFiat(value: BigDecimal, scaleWithPrecision: Boolean = false): BigDecimal {
+    private fun convertCoinToFiat(value: BigDecimal, scaleWithPrecision: Boolean = false): BigDecimal {
         if (!this.coinIsConvertible()) return value
 
         val converter = coinConverter!!
         return if (!scaleWithPrecision) converter.toFiat(value) else converter.toFiatWithPrecision(value)
     }
 
-    fun convertTokenToFiat(value: BigDecimal, scaleWithPrecision: Boolean = false): BigDecimal {
+    private fun convertTokenToFiat(value: BigDecimal, scaleWithPrecision: Boolean = false): BigDecimal {
         if (!this.tokenIsConvertible()) return value
 
         val converter = tokenConverter!!
@@ -91,7 +91,7 @@ data class SendState(
     fun getButtonState(): ButtonState = if (isReadyToSend()) ButtonState.ENABLED else ButtonState.DISABLED
 
     fun getTotalAmountToSend(value: BigDecimal = amountState.amountToSendCrypto): BigDecimal {
-        val needToExtractFee = amountState.isCoinAmount() && feeState.feeIsIncluded
+        val needToExtractFee = amountState.canIncludeFee() && feeState.feeIsIncluded
         return if (needToExtractFee) value.minus(feeState.getCurrentFeeValue()) else value
     }
 
@@ -107,13 +107,13 @@ data class SendState(
     }
 
     companion object {
-        fun addressPayIdIsReady(): Boolean = store.state.sendState.addressPayIdState.isReady()
+        private fun addressIsReady(): Boolean = store.state.sendState.addressState.isReady()
 
-        fun amountIsReady(): Boolean = store.state.sendState.amountState.isReady()
+        private fun amountIsReady(): Boolean = store.state.sendState.amountState.isReady()
 
-        fun isReadyToRequestFee(): Boolean = addressPayIdIsReady() && amountIsReady()
+        fun isReadyToRequestFee(): Boolean = addressIsReady() && amountIsReady()
 
-        fun isReadyToSend(): Boolean = addressPayIdIsReady() && amountIsReady() &&
+        fun isReadyToSend(): Boolean = addressIsReady() && amountIsReady() &&
             store.state.sendState.feeState.isReady()
     }
 }
@@ -135,13 +135,16 @@ data class AmountState(
     val decimalSeparator: String = ".",
     val error: TapError? = null,
     val inputIsEnabled: Boolean = true,
+    private val feePaidInCurrencyNetworkCurrency: Boolean = false,
 ) : SendScreenState {
 
     override val stateId: StateId = StateId.AMOUNT
 
     fun isReady(): Boolean = error == null && !amountToSendCrypto.isZero()
 
-    fun isCoinAmount(): Boolean = typeOfAmount == AmountType.Coin
+    private fun isCoinAmount(): Boolean = typeOfAmount == AmountType.Coin
+
+    fun canIncludeFee(): Boolean = isCoinAmount() || feePaidInCurrencyNetworkCurrency
 
     fun createMainCurrency(type: MainCurrencyType, canSwitched: Boolean): MainCurrency {
         return if (!canSwitched) {

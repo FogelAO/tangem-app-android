@@ -5,15 +5,11 @@ import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.JsonReader
 import com.squareup.moshi.JsonWriter
 import com.squareup.moshi.ToJson
-import com.tangem.domain.common.CardDTO
+import com.tangem.domain.models.scan.CardDTO
 
 internal class CardBackupStatusAdapter {
     @ToJson
-    fun toJson(
-        writer: JsonWriter,
-        src: CardDTO.BackupStatus?,
-        mapAdapter: JsonAdapter<Map<String, String>>,
-    ) {
+    fun toJson(writer: JsonWriter, src: CardDTO.BackupStatus?, mapAdapter: JsonAdapter<Map<String, String>>) {
         val jsonMap = mutableMapOf<String, String>()
 
         when (src) {
@@ -37,10 +33,7 @@ internal class CardBackupStatusAdapter {
     }
 
     @FromJson
-    fun fromJson(
-        reader: JsonReader,
-        mapAdapter: JsonAdapter<Map<String, String>>,
-    ): CardDTO.BackupStatus? {
+    fun fromJson(reader: JsonReader, mapAdapter: JsonAdapter<Map<String, String>>): CardDTO.BackupStatus? {
         val map = mapAdapter.fromJson(reader) ?: return null
 
         return when (map["status"]) {

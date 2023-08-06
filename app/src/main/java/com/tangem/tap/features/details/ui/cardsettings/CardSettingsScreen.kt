@@ -24,7 +24,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.tangem.core.ui.res.TangemTheme
-import com.tangem.tap.common.compose.TangemTypography
 import com.tangem.tap.features.details.ui.common.DetailsMainButton
 import com.tangem.tap.features.details.ui.common.SettingsScreensScaffold
 import com.tangem.wallet.R
@@ -86,13 +85,13 @@ fun CardSettingsReadCard(onScanCardClick: () -> Unit) {
             Text(
                 text = stringResource(id = R.string.scan_card_settings_title),
                 color = colorResource(id = R.color.text_primary_1),
-                style = TangemTypography.headline3,
+                style = TangemTheme.typography.h3,
             )
             Spacer(modifier = Modifier.size(20.dp))
             Text(
                 text = stringResource(id = R.string.scan_card_settings_message),
                 color = colorResource(id = R.color.text_secondary),
-                style = TangemTypography.body1,
+                style = TangemTheme.typography.body1,
                 modifier = Modifier
                     .verticalScroll(rememberScrollState())
                     .weight(weight = 1f, fill = false),
@@ -120,6 +119,7 @@ fun CardSettings(state: CardSettingsScreenState) {
                 is CardInfo.SignedHashes -> 14.dp
                 is CardInfo.SecurityMode -> 16.dp
                 is CardInfo.ChangeAccessCode -> 16.dp
+                is CardInfo.AccessCodeRecovery -> 16.dp
                 is CardInfo.ResetToFactorySettings -> 28.dp
             }
             val paddingTop = when (it) {
@@ -128,6 +128,7 @@ fun CardSettings(state: CardSettingsScreenState) {
                 is CardInfo.SignedHashes -> 12.dp
                 is CardInfo.SecurityMode -> 14.dp
                 is CardInfo.ChangeAccessCode -> 16.dp
+                is CardInfo.AccessCodeRecovery -> 16.dp
                 is CardInfo.ResetToFactorySettings -> 16.dp
             }
             Column(

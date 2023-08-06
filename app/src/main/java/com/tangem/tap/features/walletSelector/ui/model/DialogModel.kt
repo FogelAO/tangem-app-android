@@ -12,3 +12,18 @@ internal sealed interface DialogModel {
         val onDismiss: () -> Unit,
     ) : DialogModel
 }
+
+internal sealed interface WarningModel : DialogModel {
+    data class BiometricsLockoutWarning(
+        val isPermanent: Boolean,
+        val onDismiss: () -> Unit,
+    ) : WarningModel
+
+    data class KeyInvalidatedWarning(
+        val onDismiss: () -> Unit,
+    ) : WarningModel
+
+    data class BiometricsDisabledWarning(
+        val onDismiss: () -> Unit,
+    ) : WarningModel
+}

@@ -4,22 +4,26 @@ import com.tangem.blockchain.common.Blockchain
 import com.tangem.blockchain.common.Token
 import com.tangem.common.CompletionResult
 import com.tangem.common.card.EllipticCurve
+import com.tangem.common.core.TangemError
+import com.tangem.common.core.TangemSdkError
 import com.tangem.common.extensions.ByteArrayKey
 import com.tangem.common.extensions.toMapKey
-import com.tangem.common.hdWallet.DerivationPath
-import com.tangem.domain.common.ScanResponse
+import com.tangem.crypto.hdWallet.DerivationPath
+import com.tangem.domain.common.BlockchainNetwork
 import com.tangem.domain.common.TapWorkarounds.derivationStyle
 import com.tangem.domain.common.extensions.fromNetworkId
+import com.tangem.domain.common.util.hasDerivation
+import com.tangem.domain.models.scan.ScanResponse
 import com.tangem.lib.crypto.DerivationManager
 import com.tangem.lib.crypto.models.Currency
 import com.tangem.lib.crypto.models.Currency.NonNativeToken
+import com.tangem.lib.crypto.models.errors.UserCancelledException
 import com.tangem.operations.derivation.ExtendedPublicKeysMap
 import com.tangem.tap.DELAY_SDK_DIALOG_CLOSE
 import com.tangem.tap.common.extensions.dispatchDebugErrorNotification
 import com.tangem.tap.common.extensions.dispatchOnMain
 import com.tangem.tap.common.redux.global.GlobalAction
 import com.tangem.tap.domain.TapError
-import com.tangem.tap.domain.tokens.models.BlockchainNetwork
 import com.tangem.tap.scope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,7 +33,7 @@ class DerivationManagerImpl(
     private val appStateHolder: AppStateHolder,
 ) : DerivationManager {
 
-    override suspend fun deriveMissingBlockchains(currency: Currency) = suspendCoroutine<Boolean> { continuation ->
+    override suspend fun deriveMissingBlockchains(currency: Currency) = suspendCoroutine { continuation ->
         val blockchain = Blockchain.fromNetworkId(currency.networkId)
         val card = appStateHolder.getActualCard()
         if (blockchain != null && card != null) {
@@ -39,7 +43,9 @@ class DerivationManagerImpl(
                     contractAddress = currency.contractAddress,
                     decimals = currency.decimalCount,
                 )
-            } else null
+            } else {
+                null
+            }
             val blockchainNetwork = BlockchainNetwork(blockchain, card)
             val appCurrency = com.tangem.tap.features.wallet.models.Currency.fromBlockchainNetwork(
                 blockchainNetwork,
@@ -49,9 +55,10 @@ class DerivationManagerImpl(
             if (scanResponse != null) {
                 deriveMissingBlockchains(
                     scanResponse = scanResponse,
-                    listOf(appCurrency),
+                    currencyList = listOf(appCurrency),
+                    onSuccess = { continuation.resumeWith(Result.success(true)) },
                 ) {
-                    continuation.resumeWith(Result.success(true))
+                    continuation.resumeWith(Result.failure(it))
                 }
             }
         } else {
@@ -59,12 +66,19 @@ class DerivationManagerImpl(
         }
     }
 
-    override fun hasDerivation(networkId: String): Boolean {
+    override fun getDerivationPathForBlockchain(networkId: String): String? {
         val scanResponse = appStateHolder.scanResponse
         val blockchain = Blockchain.fromNetworkId(networkId)
         if (scanResponse != null && blockchain != null) {
-            val derivationPath = blockchain.derivationPath(appStateHolder.getActualCard()?.derivationStyle)?.rawPath
-            if (derivationPath.isNullOrEmpty()) return false
+            return blockchain.derivationPath(appStateHolder.getActualCard()?.derivationStyle)?.rawPath
+        }
+        return null
+    }
+
+    override fun hasDerivation(networkId: String, derivationPath: String): Boolean {
+        val scanResponse = appStateHolder.scanResponse
+        val blockchain = Blockchain.fromNetworkId(networkId)
+        if (scanResponse != null && blockchain != null) {
             return scanResponse.hasDerivation(
                 blockchain,
                 derivationPath,
@@ -77,6 +91,7 @@ class DerivationManagerImpl(
         scanResponse: ScanResponse,
         currencyList: List<com.tangem.tap.features.wallet.models.Currency>,
         onSuccess: (ScanResponse) -> Unit,
+        onFailure: (Exception) -> Unit,
     ) {
         val derivationDataList = listOfNotNull(
             getDerivations(EllipticCurve.Secp256k1, scanResponse, currencyList),
@@ -89,11 +104,11 @@ class DerivationManagerImpl(
         }
 
         scope.launch {
-            val selectedWallet = appStateHolder.userWalletsListManager?.selectedUserWalletSync
+            val selectedUserWallet = appStateHolder.userWalletsListManager?.selectedUserWalletSync
 
             val result = appStateHolder.tangemSdkManager?.derivePublicKeys(
-                scanResponse.card.cardId,
-                derivations,
+                cardId = null, // always ignore cardId in derive task
+                derivations = derivations,
             )
             when (result) {
                 is CompletionResult.Success -> {
@@ -110,8 +125,8 @@ class DerivationManagerImpl(
                     val updatedScanResponse = scanResponse.copy(
                         derivedKeys = updatedDerivedKeys,
                     )
-                    if (selectedWallet != null) {
-                        val userWallet = selectedWallet.copy(
+                    if (selectedUserWallet != null) {
+                        val userWallet = selectedUserWallet.copy(
                             scanResponse = updatedScanResponse,
                         )
 
@@ -128,6 +143,7 @@ class DerivationManagerImpl(
                             "Error derivation",
                         ),
                     )
+                    onFailure.invoke(handleTangemError(result.error))
                 }
                 else -> {
                     error("result result is null")
@@ -166,14 +182,23 @@ class DerivationManagerImpl(
 
         return DerivationData(
             derivations = mapKeyOfWalletPublicKey to toDerive,
-            alreadyDerivedKeys = alreadyDerivedKeys,
-            mapKeyOfWalletPublicKey = mapKeyOfWalletPublicKey,
         )
+    }
+
+    /**
+     * Simple error handler
+     * for now specifically handle only UserCancelled
+     *
+     * @param error [TangemError]
+     */
+    private fun handleTangemError(error: TangemError): Exception {
+        if (error is TangemSdkError.UserCancelled) {
+            return UserCancelledException()
+        }
+        return IllegalStateException(error.customMessage)
     }
 
     private class DerivationData(
         val derivations: Pair<ByteArrayKey, List<DerivationPath>>,
-        val alreadyDerivedKeys: ExtendedPublicKeysMap,
-        val mapKeyOfWalletPublicKey: ByteArrayKey,
     )
 }

@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.res.stringResource
+import com.tangem.tap.features.details.redux.AccessCodeRecoveryState
 import com.tangem.tap.features.details.redux.SecurityOption
 import com.tangem.tap.features.details.ui.securitymode.toTitleRes
 import com.tangem.tap.features.details.ui.utils.toResetCardDescriptionText
@@ -12,6 +13,7 @@ import com.tangem.tap.features.details.redux.CardInfo as ReduxCardInfo
 
 data class CardSettingsScreenState(
     val cardDetails: List<CardInfo>? = null,
+    val accessCodeRecoveryState: AccessCodeRecoveryState? = null,
     val onScanCardClick: () -> Unit,
     val onElementClick: (CardInfo) -> Unit,
 )
@@ -48,6 +50,16 @@ sealed class CardInfo(
         clickable = true,
     )
 
+    class AccessCodeRecovery(val enabled: Boolean) : CardInfo(
+        titleRes = TextReference.Res(R.string.card_settings_access_code_recovery_title),
+        subtitle = if (enabled) {
+            TextReference.Res(R.string.common_enabled)
+        } else {
+            TextReference.Res(R.string.common_disabled)
+        },
+        clickable = true,
+    )
+
     class ResetToFactorySettings(cardInfo: ReduxCardInfo) : CardInfo(
         titleRes = TextReference.Res(R.string.card_settings_reset_card_to_factory),
         subtitle = cardInfo.toResetCardDescriptionText(),
@@ -55,6 +67,7 @@ sealed class CardInfo(
     )
 }
 
+// TODO("Remove and use the same from coreUI")
 sealed interface TextReference {
     class Res(@StringRes val id: Int, val formatArgs: List<Any> = emptyList()) : TextReference {
         constructor(@StringRes id: Int, vararg formatArgs: Any) : this(id, formatArgs.toList())

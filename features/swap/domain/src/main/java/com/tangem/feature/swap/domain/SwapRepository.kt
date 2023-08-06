@@ -1,10 +1,10 @@
 package com.tangem.feature.swap.domain
 
+import com.tangem.feature.swap.domain.models.data.AggregatedSwapDataModel
 import com.tangem.feature.swap.domain.models.domain.ApproveModel
 import com.tangem.feature.swap.domain.models.domain.Currency
 import com.tangem.feature.swap.domain.models.domain.QuoteModel
 import com.tangem.feature.swap.domain.models.domain.SwapDataModel
-import com.tangem.feature.swap.domain.models.data.AggregatedSwapDataModel
 
 interface SwapRepository {
 
@@ -32,11 +32,7 @@ interface SwapRepository {
      * @param tokenAddress token you want to exchange
      * @param amount number of tokens is allowed. By default infinite
      */
-    suspend fun dataToApprove(
-        networkId: String,
-        tokenAddress: String,
-        amount: String? = null,
-    ): ApproveModel
+    suspend fun dataToApprove(networkId: String, tokenAddress: String, amount: String? = null): ApproveModel
 
     /**
      * Get the number of tokens that the 1inch router is allowed to spend
@@ -61,4 +57,10 @@ interface SwapRepository {
         fromWalletAddress: String,
         slippage: Int,
     ): AggregatedSwapDataModel<SwapDataModel>
+
+    /**
+     * Returns a tangem fee for swap in percents
+     * Example: 0.35%
+     */
+    fun getTangemFee(): Double
 }

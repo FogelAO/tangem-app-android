@@ -13,11 +13,12 @@ import com.tangem.operations.wallet.CreateWalletTask
  * Created by Anton Zhilenkov on 13/10/2021.
  */
 class CreateWalletsResponse(
-    val createWalletResponses: List<CreateWalletResponse>
+    val createWalletResponses: List<CreateWalletResponse>,
 ) : CommandResponse
 
 class CreateWalletsTask(
     private val curves: List<EllipticCurve>,
+    private val seed: ByteArray? = null,
 ) : CardSessionRunnable<CreateWalletsResponse> {
 
     private val createdWalletsResponses = mutableListOf<CreateWalletResponse>()
@@ -35,9 +36,9 @@ class CreateWalletsTask(
     private fun createWallet(
         curve: EllipticCurve,
         session: CardSession,
-        callback: (result: CompletionResult<CreateWalletsResponse>) -> Unit
+        callback: (result: CompletionResult<CreateWalletsResponse>) -> Unit,
     ) {
-        CreateWalletTask(curve).run(session) { result ->
+        CreateWalletTask(curve, seed).run(session) { result ->
             when (result) {
                 is CompletionResult.Success -> {
                     createdWalletsResponses.add(result.data)
@@ -47,6 +48,7 @@ class CreateWalletsTask(
                     }
                     createWallet(curves[createdWalletsResponses.size], session, callback)
                 }
+
                 is CompletionResult.Failure -> callback(CompletionResult.Failure(result.error))
             }
         }

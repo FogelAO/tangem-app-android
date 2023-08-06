@@ -14,10 +14,7 @@ class ResetToFactorySettingsTask : CardSessionRunnable<Card> {
         deleteWallets(session, callback)
     }
 
-    private fun deleteWallets(
-        session: CardSession,
-        callback: (result: CompletionResult<Card>) -> Unit,
-    ) {
+    private fun deleteWallets(session: CardSession, callback: (result: CompletionResult<Card>) -> Unit) {
         val wallet = session.environment.card?.wallets?.lastOrNull().guard {
             resetBackup(session, callback)
             return
@@ -33,12 +30,8 @@ class ResetToFactorySettingsTask : CardSessionRunnable<Card> {
         }
     }
 
-    private fun resetBackup(
-        session: CardSession,
-        callback: (result: CompletionResult<Card>) -> Unit,
-    ) {
-        val backupStatus = session.environment.card?.backupStatus
-        if (backupStatus == null || backupStatus == Card.BackupStatus.NoBackup) {
+    private fun resetBackup(session: CardSession, callback: (result: CompletionResult<Card>) -> Unit) {
+        if (session.environment.card?.backupStatus?.isActive != true) {
             callback(CompletionResult.Success(session.environment.card!!))
             return
         }

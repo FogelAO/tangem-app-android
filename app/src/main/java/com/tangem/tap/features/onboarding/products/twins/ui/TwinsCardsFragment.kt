@@ -14,18 +14,15 @@ import com.tangem.Message
 import com.tangem.blockchain.common.Blockchain
 import com.tangem.common.extensions.VoidCallback
 import com.tangem.core.analytics.Analytics
+import com.tangem.core.navigation.ShareElement
 import com.tangem.core.ui.fragments.setStatusBarColor
-import com.tangem.domain.common.ScanResponse
+import com.tangem.datasource.asset.AssetReader
 import com.tangem.domain.common.TwinCardNumber
-import com.tangem.tangem_sdk_new.ui.widget.leapfrogWidget.LeapfrogWidget
-import com.tangem.tap.common.AndroidAssetReader
+import com.tangem.domain.models.scan.ScanResponse
+import com.tangem.domain.userwallets.Artwork
+import com.tangem.sdk.ui.widget.leapfrogWidget.LeapfrogWidget
 import com.tangem.tap.common.analytics.events.Onboarding
-import com.tangem.tap.common.extensions.beginDelayedTransition
-import com.tangem.tap.common.extensions.getDrawableCompat
-import com.tangem.tap.common.extensions.hide
-import com.tangem.tap.common.extensions.show
-import com.tangem.tap.common.extensions.stripZeroPlainString
-import com.tangem.tap.common.redux.navigation.ShareElement
+import com.tangem.tap.common.extensions.*
 import com.tangem.tap.common.toggleWidget.RefreshBalanceWidget
 import com.tangem.tap.common.transitions.InternalNoteLayoutTransition
 import com.tangem.tap.domain.twins.TwinsCardWidget
@@ -35,13 +32,18 @@ import com.tangem.tap.features.onboarding.products.twins.redux.CreateTwinWalletM
 import com.tangem.tap.features.onboarding.products.twins.redux.TwinCardsAction
 import com.tangem.tap.features.onboarding.products.twins.redux.TwinCardsState
 import com.tangem.tap.features.onboarding.products.twins.redux.TwinCardsStep
-import com.tangem.tap.features.wallet.redux.Artwork
 import com.tangem.tap.store
 import com.tangem.wallet.R
 import com.tangem.wallet.databinding.LayoutOnboardingContainerTopBinding
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @Suppress("LargeClass")
+@AndroidEntryPoint
 class TwinsCardsFragment : BaseOnboardingFragment<TwinCardsState>() {
+
+    @Inject
+    lateinit var assetReader: AssetReader
 
     private val mainBinding by lazy { binding.vMain }
     private var previousStep: TwinCardsStep = TwinCardsStep.None
@@ -253,8 +255,8 @@ class TwinsCardsFragment : BaseOnboardingFragment<TwinCardsState>() {
             Analytics.send(Onboarding.CreateWallet.ButtonCreateWallet())
             store.dispatch(
                 TwinCardsAction.Wallet.LaunchFirstStep(
-                    Message(getString(R.string.twins_recreate_title_format, twinIndexNumber)),
-                    AndroidAssetReader(requireContext()),
+                    initialMessage = Message(getString(R.string.twins_recreate_title_format, twinIndexNumber)),
+                    reader = assetReader,
                 ),
             )
         }
@@ -411,7 +413,11 @@ class TwinsCardsFragment : BaseOnboardingFragment<TwinCardsState>() {
             TwinCardsAction.OnBackPressed { should, popAction ->
                 store.dispatch(TwinCardsAction.Confetti.Hide)
                 showConfetti(false)
-                if (should) switchToCard(TwinCardNumber.First, true, popAction) else popAction()
+                if (should) {
+                    switchToCard(TwinCardNumber.First, true, popAction)
+                } else {
+                    popAction()
+                }
             },
         )
     }

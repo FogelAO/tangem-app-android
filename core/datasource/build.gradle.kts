@@ -1,68 +1,47 @@
 plugins {
-    id("com.android.library")
-    kotlin("android")
-    kotlin("kapt")
-    id("com.google.dagger.hilt.android")
-}
-
-android {
-    defaultConfig {
-        compileSdk = AppConfig.compileSdkVersion
-        minSdk = AppConfig.minSdkVersion
-        targetSdk = AppConfig.targetSdkVersion
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-        isCoreLibraryDesugaringEnabled = false
-    }
-
-    buildTypes {
-        create("debug_beta") {
-            initWith(getByName("release"))
-            BuildConfigFieldFactory(
-                fields = listOf(
-                    Field.Environment("release"),
-                    Field.TestActionEnabled(true),
-                    Field.LogEnabled(true),
-                ),
-                builder = ::buildConfigField,
-            ).create()
-        }
-    }
+    alias(deps.plugins.android.library)
+    alias(deps.plugins.kotlin.android)
+    alias(deps.plugins.kotlin.kapt)
+    alias(deps.plugins.hilt.android)
+    id("configuration")
 }
 
 dependencies {
 
     /** Project */
-    implementation(project(":libs:auth"))
+    implementation(projects.core.utils)
+    implementation(projects.libs.auth)
+    implementation(projects.domain.core)
+    implementation(projects.domain.wallets.models)
 
     /** Tangem libraries */
-    implementation(Tangem.cardCore)
+    implementation(deps.tangem.blockchain)
+    implementation(deps.tangem.card.core)
 
     /** DI */
-    implementation(Library.hilt)
-    kapt(Library.hiltKapt)
+    implementation(deps.hilt.android)
+    kapt(deps.hilt.kapt)
 
     /** Coroutines */
-    implementation(Library.coroutine)
+    implementation(deps.kotlin.coroutines)
+    implementation(deps.kotlin.coroutines.rx2)
 
     /** Logging */
-    implementation(Library.timber)
+    implementation(deps.timber)
 
     /** Network */
-    implementation(Library.retrofit)
-    implementation(Library.retrofitMoshiConverter)
-    implementation(Library.moshi)
-    implementation(Library.moshiKotlin)
-    implementation(Library.okHttp)
-    implementation(Library.okHttpLogging)
+    implementation(deps.krateSharedPref)
+    implementation(deps.moshi)
+    implementation(deps.moshi.kotlin)
+    implementation(deps.okHttp)
+    implementation(deps.okHttp.prettyLogging)
+    implementation(deps.retrofit)
+    implementation(deps.retrofit.moshi)
+    implementation(deps.reactive.network)
 
     /** Time */
-    implementation(Library.jodatime)
+    implementation(deps.jodatime)
+
+    /** Security */
+    implementation(deps.spongecastle.core)
 }

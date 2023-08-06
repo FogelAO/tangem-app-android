@@ -1,28 +1,25 @@
 package com.tangem.tap.domain.walletStores.repository.implementation
 
-import com.tangem.blockchain.common.Blockchain
-import com.tangem.blockchain.common.DerivationParams
-import com.tangem.blockchain.common.DerivationStyle
-import com.tangem.blockchain.common.WalletManager
-import com.tangem.blockchain.common.WalletManagerFactory
+import com.tangem.blockchain.common.*
 import com.tangem.common.CompletionResult
 import com.tangem.common.catching
-import com.tangem.common.hdWallet.DerivationPath
-import com.tangem.common.map
+import com.tangem.common.doOnSuccess
 import com.tangem.common.mapFailure
-import com.tangem.domain.common.CardDTO
-import com.tangem.domain.common.ScanResponse
+import com.tangem.crypto.hdWallet.DerivationPath
+import com.tangem.domain.common.BlockchainNetwork
 import com.tangem.domain.common.TapWorkarounds.isTestCard
 import com.tangem.domain.common.TapWorkarounds.useOldStyleDerivation
-import com.tangem.domain.common.util.UserWalletId
-import com.tangem.tap.domain.extensions.makeWalletManagerForApp
-import com.tangem.tap.domain.model.UserWallet
-import com.tangem.tap.domain.tokens.models.BlockchainNetwork
+import com.tangem.domain.common.extensions.makeWalletManagerForApp
+import com.tangem.domain.common.util.cardTypesResolver
+import com.tangem.domain.models.scan.CardDTO
+import com.tangem.domain.models.scan.ScanResponse
+import com.tangem.domain.wallets.legacy.WalletManagersRepository
+import com.tangem.domain.wallets.models.UserWallet
+import com.tangem.domain.wallets.models.UserWalletId
 import com.tangem.tap.domain.walletStores.WalletStoresError
-import com.tangem.tap.domain.walletStores.repository.WalletManagersRepository
 import com.tangem.tap.domain.walletStores.storage.WalletManagerStorage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
@@ -51,6 +48,7 @@ internal class DefaultWalletManagersRepository(
         val foundWalletManager = findWalletManager(
             userWalletId = userWallet.walletId,
             blockchain = blockchainNetwork?.blockchain,
+            derivationPath = blockchainNetwork?.derivationPath,
         )
 
         foundWalletManager?.updateTokens(
@@ -85,7 +83,13 @@ internal class DefaultWalletManagersRepository(
         return when {
             blockchain == Blockchain.Unknown || blockchain == null -> {
                 val error = WalletStoresError.UnknownBlockchain()
-                Timber.e(error)
+                Timber.e(
+                    error,
+                    """
+                        Unknown blockchain while creating wallet manager
+                        |- User wallet ID: ${userWallet.walletId}
+                    """.trimIndent(),
+                )
                 CompletionResult.Failure(error)
             }
             walletManager != null -> {
@@ -93,14 +97,19 @@ internal class DefaultWalletManagersRepository(
                     scanResponse = scanResponse,
                     blockchainNetwork = blockchainNetwork,
                 )
-                    .map { updatedWalletManager ->
-                        store(userWallet.walletId, updatedWalletManager)
-                        updatedWalletManager
-                    }
+                    .doOnSuccess { store(userWallet.walletId, it) }
             }
             else -> {
                 val error = WalletStoresError.WalletManagerNotCreated(blockchain)
-                Timber.e(error)
+                Timber.e(
+                    error,
+                    """
+                        Unable to create wallet manager
+                        |- User wallet ID: ${userWallet.walletId}
+                        |- Blockchain: $blockchain
+                        |- Derivation path: ${blockchainNetwork?.derivationPath}
+                    """.trimIndent(),
+                )
                 CompletionResult.Failure(error)
             }
         }
@@ -112,10 +121,7 @@ internal class DefaultWalletManagersRepository(
         }
     }
 
-    override suspend fun delete(
-        userWalletId: UserWalletId,
-        blockchain: Blockchain,
-    ): CompletionResult<Unit> = catching {
+    override suspend fun delete(userWalletId: UserWalletId, blockchain: Blockchain): CompletionResult<Unit> = catching {
         deleteInternal(userWalletId, blockchain)
     }
 
@@ -158,17 +164,22 @@ internal class DefaultWalletManagersRepository(
         return catching {
             val tokens = blockchainNetwork?.tokens ?: listOfNotNull(scanResponse.cardTypesResolver.getPrimaryToken())
 
-            if (tokens != cardTokens) {
-                cardTokens.clear()
+            if (tokens != walletManager.cardTokens) {
+                // TODO: remove ability to manipulate with walletManager.cardTokens
+                walletManager.cardTokens.clear()
+                walletManager.wallet.removeAllTokens()
                 if (tokens.isNotEmpty()) {
                     walletManager.cardTokens.addAll(tokens)
+                    // add empty amounts to prepare templates of tokens WalletDataModel
+                    // see: WalletMangerWalletStoreBuilderImpl.build()
+                    tokens.forEach { walletManager.wallet.setAmount(Amount(it)) }
                 }
             }
 
             walletManager
         }
             .mapFailure {
-                val error = WalletStoresError.UpdateWalletManagerError(
+                val error = WalletStoresError.UpdateWalletManagerTokensError(
                     blockchain = walletManager.wallet.blockchain,
                     cause = it,
                 )
@@ -180,14 +191,21 @@ internal class DefaultWalletManagersRepository(
     private suspend fun findWalletManager(
         userWalletId: UserWalletId,
         blockchain: Blockchain?,
+        derivationPath: String?,
     ): WalletManager? {
-        return walletManagersStorage.getAll().first()[userWalletId]?.let { userWalletManagers ->
-            if (blockchain == null) {
-                userWalletManagers.firstOrNull()
-            } else {
-                userWalletManagers.find { it.wallet.blockchain == blockchain }
+        return walletManagersStorage.getAll()
+            .firstOrNull()
+            ?.get(userWalletId)
+            ?.let { userWalletManagers ->
+                if (blockchain == null) {
+                    userWalletManagers.firstOrNull()
+                } else {
+                    userWalletManagers.firstOrNull {
+                        it.wallet.blockchain == blockchain &&
+                            it.wallet.publicKey.derivationPath?.rawPath == derivationPath
+                    }
+                }
             }
-        }
     }
 
     private fun getDerivationParams(derivationPath: String?, card: CardDTO): DerivationParams? {

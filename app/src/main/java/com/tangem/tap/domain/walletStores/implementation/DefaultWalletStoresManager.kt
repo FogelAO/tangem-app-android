@@ -1,23 +1,21 @@
 package com.tangem.tap.domain.walletStores.implementation
 
 import com.tangem.blockchain.common.WalletManager
-import com.tangem.common.CompletionResult
-import com.tangem.common.doOnSuccess
-import com.tangem.common.flatMap
-import com.tangem.common.flatMapOnFailure
-import com.tangem.common.fold
-import com.tangem.common.map
-import com.tangem.domain.common.util.UserWalletId
+import com.tangem.blockchain.common.address.AddressType
+import com.tangem.common.*
+import com.tangem.domain.wallets.legacy.WalletManagersRepository
+import com.tangem.domain.wallets.models.UserWallet
+import com.tangem.domain.wallets.models.UserWalletId
 import com.tangem.tap.common.entities.FiatCurrency
-import com.tangem.tap.domain.model.UserWallet
 import com.tangem.tap.domain.model.WalletStoreModel
 import com.tangem.tap.domain.model.builders.WalletStoreBuilder
 import com.tangem.tap.domain.tokens.UserTokensRepository
 import com.tangem.tap.domain.walletStores.WalletStoresError
 import com.tangem.tap.domain.walletStores.WalletStoresManager
 import com.tangem.tap.domain.walletStores.repository.WalletAmountsRepository
-import com.tangem.tap.domain.walletStores.repository.WalletManagersRepository
 import com.tangem.tap.domain.walletStores.repository.WalletStoresRepository
+import com.tangem.tap.domain.walletStores.repository.implementation.utils.updateSelectedAddress
+import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.features.wallet.models.toBlockchainNetworks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -57,38 +55,35 @@ internal class DefaultWalletStoresManager(
         return walletStoresRepository.clear()
     }
 
-    override suspend fun fetch(
-        userWallets: List<UserWallet>,
-        refresh: Boolean,
-    ): CompletionResult<Unit> = withContext(Dispatchers.Default) {
-        val fiatCurrency = appCurrencyProvider.invoke()
-        val isFiatCurrencyChanged = state.value.fiatCurrency != fiatCurrency
+    override suspend fun fetch(userWallets: List<UserWallet>, refresh: Boolean): CompletionResult<Unit> =
+        withContext(Dispatchers.Default) {
+            val fiatCurrency = appCurrencyProvider.invoke()
+            val isFiatCurrencyChanged = state.value.fiatCurrency != fiatCurrency
 
-        state.update { prevState ->
-            prevState.copy(
-                fiatCurrency = fiatCurrency,
-            )
+            state.update { prevState ->
+                prevState.copy(
+                    fiatCurrency = fiatCurrency,
+                )
+            }
+
+            userWallets
+                .mapNotNull { userWallet ->
+                    val hasNotWalletStoresForUserWallet = !walletStoresRepository.contains(userWallet.walletId)
+                    if (refresh || hasNotWalletStoresForUserWallet || isFiatCurrencyChanged) {
+                        fetchWalletsIfNeeded(userWallet)
+                    } else {
+                        null
+                    }
+                }
+                .fold(arrayListOf<UserWallet>()) { acc, data ->
+                    acc.apply { add(data) }
+                }
+                .flatMap {
+                    walletAmountsRepository.updateAmountsForUserWallets(it, fiatCurrency)
+                }
         }
 
-        userWallets
-            .mapNotNull { userWallet ->
-                val hasNotWalletStoresForUserWallet = !walletStoresRepository.contains(userWallet.walletId)
-                if (refresh || hasNotWalletStoresForUserWallet || isFiatCurrencyChanged) {
-                    fetchWalletsIfNeeded(userWallet)
-                } else null
-            }
-            .fold(arrayListOf<UserWallet>()) { acc, data ->
-                acc.apply { add(data) }
-            }
-            .flatMap {
-                walletAmountsRepository.updateAmountsForUserWallets(it, fiatCurrency)
-            }
-    }
-
-    override suspend fun fetch(
-        userWallet: UserWallet,
-        refresh: Boolean,
-    ): CompletionResult<Unit> {
+    override suspend fun fetch(userWallet: UserWallet, refresh: Boolean): CompletionResult<Unit> {
         return fetch(listOf(userWallet), refresh)
     }
 
@@ -103,6 +98,21 @@ internal class DefaultWalletStoresManager(
                     )
                 }
             }
+    }
+
+    override suspend fun updateSelectedAddress(
+        userWalletId: UserWalletId,
+        currency: Currency,
+        addressType: AddressType,
+    ): CompletionResult<Unit> {
+        return walletStoresRepository.update(userWalletId) { walletStores ->
+            walletStores
+                .firstOrNull {
+                    it.blockchain == currency.blockchain &&
+                        it.derivationPath?.rawPath == currency.derivationPath
+                }
+                ?.updateSelectedAddress(currency, addressType)
+        }
     }
 
     private suspend fun fetchWalletsIfNeeded(userWallet: UserWallet): CompletionResult<UserWallet> {
@@ -126,7 +136,9 @@ internal class DefaultWalletStoresManager(
                 .also { blockchainNetworks ->
                     walletStoresRepository.deleteDifference(
                         userWalletId = userWalletId,
-                        currentBlockchains = blockchainNetworks.map { it.blockchain },
+                        currentBlockchains = blockchainNetworks.map {
+                            Currency.Blockchain(it.blockchain, it.derivationPath)
+                        },
                     )
                 }
                 .map { blockchainNetwork ->
@@ -134,7 +146,7 @@ internal class DefaultWalletStoresManager(
                         { walletManager ->
                             walletStoresRepository.storeOrUpdate(
                                 userWalletId = userWalletId,
-                                walletStore = WalletStoreBuilder(userWalletId, blockchainNetwork)
+                                walletStore = WalletStoreBuilder(userWallet, blockchainNetwork)
                                     .walletManager(walletManager)
                                     .build(),
                             )
@@ -150,7 +162,7 @@ internal class DefaultWalletStoresManager(
                         .flatMapOnFailure { error ->
                             when (error) {
                                 is WalletStoresError.WalletManagerNotCreated,
-                                is WalletStoresError.UpdateWalletManagerError,
+                                is WalletStoresError.UpdateWalletManagerTokensError,
                                 -> storeWalletStore(null)
                                 else -> CompletionResult.Failure(error)
                             }
@@ -168,14 +180,14 @@ internal class DefaultWalletStoresManager(
                 val userWalletId = userWallet.walletId
                 walletStoresRepository.storeOrUpdate(
                     userWalletId = userWalletId,
-                    walletStore = WalletStoreBuilder(userWalletId, walletManager)
+                    walletStore = WalletStoreBuilder(userWallet, walletManager)
                         .build(),
                 )
             }
             .flatMapOnFailure { error ->
                 when (error) {
                     is WalletStoresError.WalletManagerNotCreated,
-                    is WalletStoresError.UpdateWalletManagerError,
+                    is WalletStoresError.UpdateWalletManagerTokensError,
                     -> CompletionResult.Success(Unit)
                     else -> CompletionResult.Failure(error)
                 }

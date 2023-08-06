@@ -3,7 +3,7 @@ package com.tangem.tap.common.recyclerView
 import android.graphics.Rect
 import android.view.View
 import androidx.recyclerview.widget.RecyclerView
-import com.tangem.tangem_sdk_new.extensions.dpToPx
+import com.tangem.sdk.extensions.dpToPx
 
 class SpaceItemDecoration(
     private val horizontalSpaceDp: Float,
@@ -12,17 +12,12 @@ class SpaceItemDecoration(
 
     private lateinit var space: Space
 
-    override fun getItemOffsets(
-        outRect: Rect,
-        view: View,
-        parent: RecyclerView,
-        state: RecyclerView.State
-    ) {
+    override fun getItemOffsets(outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State) {
         if (state.itemCount == 0) return
         if (!::space.isInitialized) {
             space = Space(
                 view.dpToPx(horizontalSpaceDp).toInt(),
-                view.dpToPx(verticalSpaceDp).toInt()
+                view.dpToPx(verticalSpaceDp).toInt(),
             )
         }
 

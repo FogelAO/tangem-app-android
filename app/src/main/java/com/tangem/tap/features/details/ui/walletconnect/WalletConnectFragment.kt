@@ -10,9 +10,9 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
 import androidx.transition.TransitionInflater
 import com.tangem.core.analytics.Analytics
+import com.tangem.core.navigation.NavigationAction
 import com.tangem.core.ui.res.TangemTheme
 import com.tangem.tap.common.analytics.events.WalletConnect
-import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.features.details.redux.walletconnect.WalletConnectAction
 import com.tangem.tap.features.details.redux.walletconnect.WalletConnectState
 import com.tangem.tap.store
@@ -31,11 +31,7 @@ class WalletConnectFragment : Fragment(), StoreSubscriber<WalletConnectState> {
         exitTransition = inflater.inflateTransition(android.R.transition.fade)
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         return ComposeView(requireContext()).apply {
             setContent {
                 isTransitionGroup = true

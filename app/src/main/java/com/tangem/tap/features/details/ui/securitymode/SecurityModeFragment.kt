@@ -9,8 +9,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
 import androidx.transition.TransitionInflater
+import com.tangem.core.navigation.NavigationAction
 import com.tangem.core.ui.res.TangemTheme
-import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.features.details.redux.DetailsState
 import com.tangem.tap.store
 import org.rekotlin.StoreSubscriber
@@ -30,11 +30,7 @@ class SecurityModeFragment : Fragment(), StoreSubscriber<DetailsState> {
         exitTransition = inflater.inflateTransition(android.R.transition.fade)
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         return ComposeView(requireContext()).apply {
             setContent {
                 isTransitionGroup = true

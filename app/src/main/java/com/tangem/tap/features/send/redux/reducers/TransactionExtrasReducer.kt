@@ -3,19 +3,8 @@ package com.tangem.tap.features.send.redux.reducers
 import com.tangem.blockchain.blockchains.stellar.StellarMemo
 import com.tangem.blockchain.common.Blockchain
 import com.tangem.tap.features.send.redux.SendScreenAction
-import com.tangem.tap.features.send.redux.TransactionExtrasAction.BinanceMemo
-import com.tangem.tap.features.send.redux.TransactionExtrasAction.Prepare
-import com.tangem.tap.features.send.redux.TransactionExtrasAction.Release
-import com.tangem.tap.features.send.redux.TransactionExtrasAction.XlmMemo
-import com.tangem.tap.features.send.redux.TransactionExtrasAction.XrpDestinationTag
-import com.tangem.tap.features.send.redux.states.BinanceMemoState
-import com.tangem.tap.features.send.redux.states.InputViewValue
-import com.tangem.tap.features.send.redux.states.SendState
-import com.tangem.tap.features.send.redux.states.TransactionExtraError
-import com.tangem.tap.features.send.redux.states.TransactionExtrasState
-import com.tangem.tap.features.send.redux.states.XlmMemoState
-import com.tangem.tap.features.send.redux.states.XlmMemoType
-import com.tangem.tap.features.send.redux.states.XrpDestinationTagState
+import com.tangem.tap.features.send.redux.TransactionExtrasAction.*
+import com.tangem.tap.features.send.redux.states.*
 
 /**
  * Created by Anton Zhilenkov on 16/12/2020.
@@ -28,6 +17,8 @@ class TransactionExtrasReducer : SendInternalReducer {
             is XlmMemo -> handleXlmMemo(action, sendState, sendState.transactionExtrasState)
             is BinanceMemo -> handleBinanceMemo(action, sendState, sendState.transactionExtrasState)
             is XrpDestinationTag -> handleXrpTag(action, sendState, sendState.transactionExtrasState)
+            is TonMemo -> handleTonMemo(action, sendState, sendState.transactionExtrasState)
+            is CosmosMemo -> handleCosmosMemo(action, sendState, sendState.transactionExtrasState)
             else -> sendState
         }
     }
@@ -56,6 +47,11 @@ class TransactionExtrasReducer : SendInternalReducer {
             }
             Blockchain.Stellar -> TransactionExtrasState(xlmMemo = XlmMemoState())
             Blockchain.Binance -> TransactionExtrasState(binanceMemo = BinanceMemoState())
+            Blockchain.TON, Blockchain.TONTestnet -> TransactionExtrasState(tonMemoState = TonMemoState())
+            Blockchain.Cosmos,
+            Blockchain.TerraV1,
+            Blockchain.TerraV2,
+            -> TransactionExtrasState(cosmosMemoState = CosmosMemoState())
             else -> emptyResult
         }
         return updateLastState(sendState.copy(transactionExtrasState = result), result)
@@ -66,11 +62,7 @@ class TransactionExtrasReducer : SendInternalReducer {
         return updateLastState(sendState.copy(transactionExtrasState = result), result)
     }
 
-    private fun handleXlmMemo(
-        action: XlmMemo,
-        sendState: SendState,
-        infoState: TransactionExtrasState,
-    ): SendState {
+    private fun handleXlmMemo(action: XlmMemo, sendState: SendState, infoState: TransactionExtrasState): SendState {
         fun clearMemo(memo: XlmMemoState): XlmMemoState = memo.copy(text = null, id = null, error = null)
 
         val result = when (action) {
@@ -140,6 +132,32 @@ class TransactionExtrasReducer : SendInternalReducer {
                 } else {
                     infoState
                 }
+            }
+        }
+        return updateLastState(sendState.copy(transactionExtrasState = result), result)
+    }
+
+    private fun handleTonMemo(action: TonMemo, sendState: SendState, infoState: TransactionExtrasState): SendState {
+        val result = when (action) {
+            is TonMemo.HandleUserInput -> {
+                val memo = action.data
+                val input = InputViewValue(memo, true)
+                infoState.copy(tonMemoState = TonMemoState(input, memo))
+            }
+        }
+        return updateLastState(sendState.copy(transactionExtrasState = result), result)
+    }
+
+    private fun handleCosmosMemo(
+        action: CosmosMemo,
+        sendState: SendState,
+        infoState: TransactionExtrasState,
+    ): SendState {
+        val result = when (action) {
+            is CosmosMemo.HandleUserInput -> {
+                val memo = action.data
+                val input = InputViewValue(memo, true)
+                infoState.copy(cosmosMemoState = CosmosMemoState(input, memo))
             }
         }
         return updateLastState(sendState.copy(transactionExtrasState = result), result)

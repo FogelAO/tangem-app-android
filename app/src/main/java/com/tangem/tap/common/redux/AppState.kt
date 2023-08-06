@@ -1,11 +1,11 @@
 package com.tangem.tap.common.redux
 
+import com.tangem.core.navigation.NavigationState
 import com.tangem.domain.redux.DomainState
 import com.tangem.domain.redux.domainStore
 import com.tangem.domain.redux.global.NetworkServices
 import com.tangem.tap.common.redux.global.GlobalMiddleware
 import com.tangem.tap.common.redux.global.GlobalState
-import com.tangem.tap.common.redux.navigation.NavigationState
 import com.tangem.tap.common.redux.navigation.navigationMiddleware
 import com.tangem.tap.features.details.redux.DetailsMiddleware
 import com.tangem.tap.features.details.redux.DetailsState
@@ -24,21 +24,26 @@ import com.tangem.tap.features.onboarding.products.twins.redux.TwinCardsState
 import com.tangem.tap.features.onboarding.products.wallet.redux.BackupMiddleware
 import com.tangem.tap.features.onboarding.products.wallet.redux.OnboardingWalletMiddleware
 import com.tangem.tap.features.onboarding.products.wallet.redux.OnboardingWalletState
-import com.tangem.tap.features.onboarding.products.wallet.saltPay.redux.OnboardingSaltPayMiddleware
 import com.tangem.tap.features.saveWallet.redux.SaveWalletMiddleware
 import com.tangem.tap.features.saveWallet.redux.SaveWalletState
 import com.tangem.tap.features.send.redux.middlewares.SendMiddleware
 import com.tangem.tap.features.send.redux.states.SendState
 import com.tangem.tap.features.shop.redux.ShopMiddleware
 import com.tangem.tap.features.shop.redux.ShopState
-import com.tangem.tap.features.tokens.redux.TokensMiddleware
-import com.tangem.tap.features.tokens.redux.TokensState
+import com.tangem.tap.features.signin.redux.SignInMiddleware
+import com.tangem.tap.features.signin.redux.SignInState
+import com.tangem.tap.features.sprinklr.redux.SprinklrMiddleware
+import com.tangem.tap.features.sprinklr.redux.SprinklrState
+import com.tangem.tap.features.tokens.legacy.redux.TokensMiddleware
+import com.tangem.tap.features.tokens.legacy.redux.TokensState
 import com.tangem.tap.features.wallet.redux.WalletState
 import com.tangem.tap.features.wallet.redux.middlewares.WalletMiddleware
 import com.tangem.tap.features.walletSelector.redux.WalletSelectorMiddleware
 import com.tangem.tap.features.walletSelector.redux.WalletSelectorState
 import com.tangem.tap.features.welcome.redux.WelcomeMiddleware
 import com.tangem.tap.features.welcome.redux.WelcomeState
+import com.tangem.tap.proxy.redux.DaggerGraphMiddleware
+import com.tangem.tap.proxy.redux.DaggerGraphState
 import com.tangem.utils.coroutines.AppCoroutineDispatcherProvider
 import org.rekotlin.Middleware
 import org.rekotlin.StateType
@@ -61,6 +66,9 @@ data class AppState(
     val welcomeState: WelcomeState = WelcomeState(),
     val saveWalletState: SaveWalletState = SaveWalletState(),
     val walletSelectorState: WalletSelectorState = WalletSelectorState(),
+    val sprinklrState: SprinklrState = SprinklrState(),
+    val signInState: SignInState = SignInState(),
+    val daggerGraphState: DaggerGraphState = DaggerGraphState(),
 ) : StateType {
 
     val domainState: DomainState
@@ -85,14 +93,13 @@ data class AppState(
                 HomeMiddleware.handler,
                 OnboardingNoteMiddleware.handler,
                 OnboardingWalletMiddleware.handler,
-                OnboardingSaltPayMiddleware.handler,
                 OnboardingOtherCardsMiddleware.handler,
                 WalletMiddleware().walletMiddleware,
                 TwinCardsMiddleware.handler,
                 SendMiddleware().sendMiddleware,
                 DetailsMiddleware().detailsMiddleware,
                 DisclaimerMiddleware().disclaimerMiddleware,
-                TokensMiddleware().tokensMiddleware,
+                TokensMiddleware.tokensMiddleware,
                 WalletConnectMiddleware().walletConnectMiddleware,
                 BackupMiddleware().backupMiddleware,
                 ShopMiddleware().shopMiddleware,
@@ -101,6 +108,9 @@ data class AppState(
                 WalletSelectorMiddleware().middleware,
                 LockUserWalletsTimerMiddleware().middleware,
                 AccessCodeRequestPolicyMiddleware().middleware,
+                SprinklrMiddleware().middleware,
+                SignInMiddleware.middleware,
+                DaggerGraphMiddleware.daggerGraphMiddleware,
             )
         }
     }

@@ -4,18 +4,16 @@ import com.tangem.blockchain.common.Blockchain
 import com.tangem.blockchain.common.WalletManager
 import com.tangem.common.CompletionResult
 import com.tangem.common.core.TangemError
-import com.tangem.domain.common.ScanResponse
+import com.tangem.datasource.config.ConfigManager
+import com.tangem.datasource.config.models.ChatConfig
+import com.tangem.domain.models.scan.ScanResponse
+import com.tangem.domain.wallets.legacy.UserWalletsListManager
+import com.tangem.tap.common.analytics.topup.TopUpController
 import com.tangem.tap.common.entities.FiatCurrency
 import com.tangem.tap.common.feedback.FeedbackData
 import com.tangem.tap.common.feedback.FeedbackManager
-import com.tangem.tap.common.redux.DebugErrorAction
-import com.tangem.tap.common.redux.ErrorAction
-import com.tangem.tap.common.redux.NotificationAction
-import com.tangem.tap.common.redux.StateDialog
-import com.tangem.tap.common.redux.ToastNotificationAction
-import com.tangem.tap.common.zendesk.ZendeskConfig
+import com.tangem.tap.common.redux.*
 import com.tangem.tap.domain.TapError
-import com.tangem.tap.domain.configurable.config.ConfigManager
 import com.tangem.tap.domain.configurable.warningMessage.WarningMessage
 import com.tangem.tap.domain.configurable.warningMessage.WarningMessagesManager
 import com.tangem.tap.features.details.redux.SecurityOption
@@ -36,18 +34,17 @@ sealed class GlobalAction : Action {
     sealed class Onboarding : GlobalAction() {
         /**
          * Initiate an onboarding process.
-         * For SaltPay cards it's additionally checks for unfinished backup.
-         * For resuming unfinished backup for standard Wallet cards see CheckForUnfinishedBackup and
-         * StartForUnfinishedBackup
+         * For resuming unfinished backup of standard Wallet see
+         * BackupAction.CheckForUnfinishedBackup, GlobalAction.Onboarding.StartForUnfinishedBackup
          */
         data class Start(val scanResponse: ScanResponse, val canSkipBackup: Boolean = true) : Onboarding()
 
         /**
-         * Initiate resuming of unfinished backup only for standard Wallet cards.
-         * For SaltPay cards unfinished backup resumed after scanning the card on HomeScreen through Onboarding.Start.
-         * See more Onboarding.Start, CheckForUnfinishedBackup
+         * Initiate resuming of unfinished backup for standard Wallet.
+         * See more BackupAction.CheckForUnfinishedBackup
          */
         data class StartForUnfinishedBackup(val addedBackupCardsCount: Int) : Onboarding()
+
         object Stop : Onboarding()
     }
 
@@ -85,9 +82,10 @@ sealed class GlobalAction : Action {
     data class SetConfigManager(val configManager: ConfigManager) : GlobalAction()
     data class SetWarningManager(val warningManager: WarningMessagesManager) : GlobalAction()
     data class SetFeedbackManager(val feedbackManager: FeedbackManager) : GlobalAction()
+    data class SetTopUpController(val topUpController: TopUpController) : GlobalAction()
 
     data class SendEmail(val feedbackData: FeedbackData) : GlobalAction()
-    data class OpenChat(val feedbackData: FeedbackData, val zendeskConfig: ZendeskConfig? = null) : GlobalAction()
+    data class OpenChat(val feedbackData: FeedbackData, val chatConfig: ChatConfig? = null) : GlobalAction()
     data class UpdateFeedbackInfo(val walletManagers: List<WalletManager>) : GlobalAction()
 
     object ExchangeManager : GlobalAction() {
@@ -103,4 +101,6 @@ sealed class GlobalAction : Action {
     object FetchUserCountry : GlobalAction() {
         data class Success(val countryCode: String) : GlobalAction()
     }
+
+    data class UpdateUserWalletsListManager(val manager: UserWalletsListManager) : GlobalAction()
 }

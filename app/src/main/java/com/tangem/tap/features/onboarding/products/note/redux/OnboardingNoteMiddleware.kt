@@ -3,24 +3,18 @@ package com.tangem.tap.features.onboarding.products.note.redux
 import com.tangem.common.CompletionResult
 import com.tangem.common.extensions.guard
 import com.tangem.core.analytics.Analytics
+import com.tangem.core.navigation.NavigationAction
+import com.tangem.domain.common.extensions.makePrimaryWalletManager
 import com.tangem.domain.common.extensions.withMainContext
 import com.tangem.tap.DELAY_SDK_DIALOG_CLOSE
 import com.tangem.tap.common.analytics.events.AnalyticsParam
 import com.tangem.tap.common.analytics.events.Onboarding
-import com.tangem.tap.common.extensions.dispatchDebugErrorNotification
-import com.tangem.tap.common.extensions.dispatchDialogShow
-import com.tangem.tap.common.extensions.dispatchErrorNotification
-import com.tangem.tap.common.extensions.dispatchOnMain
-import com.tangem.tap.common.extensions.dispatchOpenUrl
-import com.tangem.tap.common.extensions.getAddressData
-import com.tangem.tap.common.extensions.getTopUpUrl
+import com.tangem.tap.common.extensions.*
 import com.tangem.tap.common.postUi
 import com.tangem.tap.common.redux.AppDialog
 import com.tangem.tap.common.redux.AppState
 import com.tangem.tap.common.redux.global.GlobalAction
-import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.domain.TapError
-import com.tangem.tap.domain.extensions.makePrimaryWalletManager
 import com.tangem.tap.features.demo.DemoHelper
 import com.tangem.tap.features.home.RUSSIA_COUNTRY_CODE
 import com.tangem.tap.features.onboarding.OnboardingDialog
@@ -97,7 +91,7 @@ private fun handleNoteAction(appState: () -> AppState?, action: Action, dispatch
                     onboardingManager.activationFinished(card.cardId)
                     postUi(DELAY_SDK_DIALOG_CLOSE) { store.dispatch(OnboardingNoteAction.Confetti.Show) }
                 }
-                else -> {}
+                else -> Unit
             }
         }
         is OnboardingNoteAction.CreateWallet -> {
@@ -110,11 +104,10 @@ private fun handleNoteAction(appState: () -> AppState?, action: Action, dispatch
                             val updatedResponse = scanResponse.copy(card = result.data.card)
                             onboardingManager.scanResponse = updatedResponse
                             onboardingManager.activationStarted(updatedResponse.card.cardId)
+                            store.state.globalState.topUpController?.registerEmptyWallet(updatedResponse)
                             store.dispatch(OnboardingNoteAction.SetStepOfScreen(OnboardingNoteStep.TopUpWallet))
                         }
-                        is CompletionResult.Failure -> {
-//                            do nothing
-                        }
+                        is CompletionResult.Failure -> Unit
                     }
                 }
             }
@@ -159,6 +152,7 @@ private fun handleNoteAction(appState: () -> AppState?, action: Action, dispatch
         }
         is OnboardingNoteAction.Balance.Set -> {
             if (action.balance.balanceIsToppedUp()) {
+                store.state.globalState.topUpController?.send(scanResponse, AnalyticsParam.CardBalanceState.Full)
                 store.dispatch(OnboardingNoteAction.SetStepOfScreen(OnboardingNoteStep.Done))
             }
         }
@@ -196,6 +190,7 @@ private fun handleNoteAction(appState: () -> AppState?, action: Action, dispatch
             store.dispatchDialogShow(
                 OnboardingDialog.InterruptOnboarding(
                     onOk = {
+                        OnboardingHelper.onInterrupted()
                         store.dispatch(NavigationAction.PopBackTo())
                     },
                 ),

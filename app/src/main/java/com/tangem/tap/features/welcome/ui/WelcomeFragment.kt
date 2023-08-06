@@ -1,6 +1,5 @@
 package com.tangem.tap.features.welcome.ui
 
-import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,15 +23,19 @@ import com.tangem.core.ui.components.SystemBarsEffect
 import com.tangem.core.ui.fragments.ComposeFragment
 import com.tangem.core.ui.res.TangemTheme
 import com.tangem.tap.common.analytics.events.SignIn
+import com.tangem.tap.common.extensions.eraseContext
 import com.tangem.tap.features.details.ui.cardsettings.resolveReference
+import com.tangem.tap.features.welcome.ui.components.WarningDialog
 import com.tangem.tap.features.welcome.ui.components.WelcomeScreenContent
 import com.tangem.wallet.R
 
 internal class WelcomeFragment : ComposeFragment<WelcomeScreenState>() {
+
     private val viewModel by viewModels<WelcomeViewModel>()
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onStart() {
+        super.onStart()
+        Analytics.eraseContext()
         Analytics.send(SignIn.ScreenOpened())
     }
 
@@ -45,6 +48,7 @@ internal class WelcomeFragment : ComposeFragment<WelcomeScreenState>() {
     override fun ScreenContent(state: WelcomeScreenState, modifier: Modifier) {
         val snackbarHostState = remember { SnackbarHostState() }
         val errorMessage by rememberUpdatedState(newValue = state.error?.resolveReference())
+        val warning by rememberUpdatedState(newValue = state.warning)
 
         val backgroundColor = colorResource(id = R.color.background_primary)
         SystemBarsEffect {
@@ -74,6 +78,8 @@ internal class WelcomeFragment : ComposeFragment<WelcomeScreenState>() {
                 hostState = snackbarHostState,
             )
         }
+
+        WarningDialog(warning)
 
         LaunchedEffect(key1 = errorMessage) {
             errorMessage?.let {

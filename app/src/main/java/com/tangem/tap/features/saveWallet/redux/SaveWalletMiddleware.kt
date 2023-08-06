@@ -1,26 +1,31 @@
 package com.tangem.tap.features.saveWallet.redux
 
 import com.tangem.common.CompletionResult
+import com.tangem.common.core.TangemSdkError
 import com.tangem.common.doOnFailure
 import com.tangem.common.doOnSuccess
+import com.tangem.common.extensions.guard
 import com.tangem.common.flatMap
 import com.tangem.core.analytics.Analytics
+import com.tangem.core.navigation.AppScreen
+import com.tangem.core.navigation.NavigationAction
+import com.tangem.domain.userwallets.UserWalletBuilder
+import com.tangem.domain.wallets.legacy.UserWalletsListManager
+import com.tangem.tap.*
 import com.tangem.tap.common.analytics.events.AnalyticsParam
 import com.tangem.tap.common.analytics.events.MainScreen
 import com.tangem.tap.common.analytics.events.Onboarding
 import com.tangem.tap.common.extensions.dispatchOnMain
-import com.tangem.tap.common.extensions.onUserWalletSelected
+import com.tangem.tap.common.extensions.dispatchWithMain
 import com.tangem.tap.common.redux.AppState
-import com.tangem.tap.common.redux.navigation.AppScreen
-import com.tangem.tap.common.redux.navigation.NavigationAction
-import com.tangem.tap.domain.model.builders.UserWalletBuilder
-import com.tangem.tap.preferencesStorage
-import com.tangem.tap.scope
-import com.tangem.tap.store
-import com.tangem.tap.tangemSdkManager
-import com.tangem.tap.userWalletsListManager
+import com.tangem.tap.common.redux.global.GlobalAction
+import com.tangem.tap.domain.userWalletList.di.provideBiometricImplementation
+import com.tangem.tap.domain.userWalletList.isLockable
+import com.tangem.tap.features.wallet.redux.WalletAction
+import com.tangem.tap.proxy.redux.DaggerGraphState
 import kotlinx.coroutines.launch
 import org.rekotlin.Middleware
+import timber.log.Timber
 
 internal class SaveWalletMiddleware {
     val middleware: Middleware<AppState> = { _, stateProvider ->
@@ -86,30 +91,61 @@ internal class SaveWalletMiddleware {
         }
 
         scope.launch {
-            val userWallet = UserWalletBuilder(scanResponse)
-                .backupCardsIds(state.backupInfo?.backupCardsIds)
-                .build() ?: return@launch
+            val userWallet = userWalletsListManager.selectedUserWalletSync
+                ?: UserWalletBuilder(scanResponse)
+                    .backupCardsIds(state.backupInfo?.backupCardsIds)
+                    .build()
+                ?: return@launch
 
-            val isFirstSavedWallet = !userWalletsListManager.hasSavedUserWallets
+            provideLockableUserWalletsListManagerIfNot()
+
+            val isFirstSavedWallet = !userWalletsListManager.hasUserWallets
 
             saveAccessCodeIfNeeded(state.backupInfo?.accessCode, userWallet.cardsInWallet)
                 .flatMap { userWalletsListManager.save(userWallet, canOverride = true) }
                 .doOnFailure { error ->
-                    store.dispatchOnMain(SaveWalletAction.Save.Error(error))
+                    store.dispatchWithMain(SaveWalletAction.Save.Error(error))
                 }
                 .doOnSuccess {
                     preferencesStorage.shouldSaveUserWallets = true
-
                     // Enable saving access codes only if this is the first time user save the wallet
-                    preferencesStorage.shouldSaveAccessCodes = isFirstSavedWallet ||
-                        preferencesStorage.shouldSaveAccessCodes
+                    if (isFirstSavedWallet) {
+                        preferencesStorage.shouldSaveAccessCodes = true
+                        store.state.daggerGraphState.get(DaggerGraphState::cardSdkConfigRepository)
+                            .setAccessCodeRequestPolicy(
+                                isBiometricsRequestPolicy = userWallet.hasAccessCode,
+                            )
+                    }
 
-                    store.dispatchOnMain(SaveWalletAction.Save.Success)
-
-                    store.dispatchOnMain(NavigationAction.PopBackTo(AppScreen.Wallet))
-                    store.onUserWalletSelected(userWallet)
+                    val savedUserWallet = userWalletsListManager.selectedUserWalletSync.guard {
+                        Timber.e("User wallet is not saved")
+                        return@launch
+                    }
+                    store.dispatchWithMain(SaveWalletAction.Save.Success)
+                    store.dispatchWithMain(NavigationAction.PopBackTo(AppScreen.Wallet))
+                    store.dispatchWithMain(WalletAction.UpdateCanSaveUserWallets(canSaveUserWallets = true))
+                    store.dispatchWithMain(
+                        action = WalletAction.MultiWallet.CheckForBackupWarning(savedUserWallet.scanResponse.card),
+                    )
                 }
         }
+    }
+
+    private suspend fun provideLockableUserWalletsListManagerIfNot() {
+        if (store.state.globalState.userWalletsListManager?.isLockable == true) return
+
+        val context = foregroundActivityObserver.foregroundActivity?.applicationContext.guard {
+            val error = IllegalStateException("No activities in foreground")
+            Timber.e(error)
+            store.dispatchWithMain(SaveWalletAction.Save.Error(TangemSdkError.ExceptionError(error)))
+            return
+        }
+        val manager = UserWalletsListManager.provideBiometricImplementation(
+            context = context,
+            tangemSdkManager = tangemSdkManager,
+        )
+
+        store.dispatchWithMain(GlobalAction.UpdateUserWalletsListManager(manager))
     }
 
     private fun dismiss(state: SaveWalletState) {

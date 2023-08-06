@@ -1,18 +1,26 @@
 package com.tangem.tap.features.onboarding
 
-import com.tangem.domain.common.ProductType
-import com.tangem.domain.common.ScanResponse
+import com.tangem.common.doOnFailure
+import com.tangem.common.doOnSuccess
+import com.tangem.common.extensions.guard
+import com.tangem.core.analytics.Analytics
+import com.tangem.core.navigation.AppScreen
+import com.tangem.core.navigation.NavigationAction
+import com.tangem.domain.common.TapWorkarounds.canSkipBackup
+import com.tangem.domain.common.util.cardTypesResolver
+import com.tangem.domain.common.util.twinsIsTwinned
+import com.tangem.domain.models.scan.ProductType
+import com.tangem.domain.models.scan.ScanResponse
+import com.tangem.domain.userwallets.UserWalletBuilder
+import com.tangem.tap.*
 import com.tangem.tap.common.extensions.dispatchOnMain
-import com.tangem.tap.common.extensions.onCardScanned
-import com.tangem.tap.common.redux.navigation.AppScreen
-import com.tangem.tap.common.redux.navigation.NavigationAction
+import com.tangem.tap.common.extensions.onUserWalletSelected
+import com.tangem.tap.common.extensions.removeContext
+import com.tangem.tap.common.extensions.setContext
 import com.tangem.tap.features.saveWallet.redux.SaveWalletAction
-import com.tangem.tap.preferencesStorage
-import com.tangem.tap.scope
-import com.tangem.tap.store
-import com.tangem.tap.tangemSdkManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * Created by Anton Zhilenkov on 05/10/2021.
@@ -29,6 +37,17 @@ object OnboardingHelper {
                     cardInfoStorage.isActivationInProgress(cardId)
                 }
             }
+
+            // TODO for Shiba disabled check wallet 2, and only check canSkipBackup, enable when release wallet 2
+            //  (AND-4057)
+            // response.cardTypesResolver.isWallet2() -> {
+            !response.card.canSkipBackup -> {
+                val emptyWallets = response.card.wallets.isEmpty()
+                val activationInProgress = cardInfoStorage.isActivationInProgress(cardId)
+                val backupNotActive = response.card.backupStatus?.isActive != true
+                emptyWallets || activationInProgress || backupNotActive
+            }
+
             response.card.wallets.isNotEmpty() -> cardInfoStorage.isActivationInProgress(cardId)
             else -> true
         }
@@ -43,7 +62,6 @@ object OnboardingHelper {
                 AppScreen.OnboardingOther
             }
             ProductType.Twins -> AppScreen.OnboardingTwins
-            ProductType.SaltPay -> AppScreen.OnboardingWallet
             ProductType.Start2Coin -> throw java.lang.UnsupportedOperationException(
                 "Onboarding for Start2Coin cards is not supported",
             )
@@ -55,9 +73,12 @@ object OnboardingHelper {
         accessCode: String? = null,
         backupCardsIds: List<String>? = null,
     ) {
+        Analytics.setContext(scanResponse)
         when {
             // When should save user wallets, then save card without navigate to save wallet screen
             preferencesStorage.shouldSaveUserWallets -> scope.launch {
+                proceedWithScanResponse(scanResponse, backupCardsIds)
+
                 store.dispatchOnMain(
                     SaveWalletAction.ProvideBackupInfo(
                         scanResponse = scanResponse,
@@ -71,7 +92,7 @@ object OnboardingHelper {
             // then open save wallet screen
             tangemSdkManager.canUseBiometry &&
                 preferencesStorage.shouldShowSaveUserWalletScreen -> scope.launch {
-                store.onCardScanned(scanResponse)
+                proceedWithScanResponse(scanResponse, backupCardsIds)
 
                 delay(timeMillis = 1_200)
 
@@ -86,10 +107,32 @@ object OnboardingHelper {
             }
             // If device has no biometry and save wallet screen has been shown, then go through old scenario
             else -> scope.launch {
-                store.onCardScanned(scanResponse)
+                proceedWithScanResponse(scanResponse, backupCardsIds)
             }
         }
 
         store.dispatchOnMain(NavigationAction.NavigateTo(AppScreen.Wallet))
+    }
+
+    fun onInterrupted() {
+        Analytics.removeContext()
+    }
+
+    private suspend fun proceedWithScanResponse(scanResponse: ScanResponse, backupCardsIds: List<String>?) {
+        val userWallet = UserWalletBuilder(scanResponse)
+            .backupCardsIds(backupCardsIds?.toSet())
+            .build()
+            .guard {
+                Timber.e("User wallet not created")
+                return
+            }
+
+        userWalletsListManager.save(userWallet, canOverride = true)
+            .doOnFailure { error ->
+                Timber.e(error, "Unable to save user wallet")
+            }
+            .doOnSuccess {
+                scope.launch { store.onUserWalletSelected(userWallet) }
+            }
     }
 }

@@ -6,8 +6,8 @@ import com.tangem.common.services.Result
 import com.tangem.datasource.api.common.MoshiConverter
 import com.tangem.datasource.api.tangemTech.TangemTechApi
 import com.tangem.datasource.api.tangemTech.models.CoinsResponse
+import com.tangem.datasource.asset.AssetReader
 import com.tangem.domain.common.extensions.toNetworkId
-import com.tangem.tap.common.AssetReader
 import com.tangem.utils.coroutines.CoroutineDispatcherProvider
 import kotlinx.coroutines.withContext
 
@@ -20,10 +20,10 @@ class LoadAvailableCoinsService(
         MoshiConverter.networkMoshi.adapter(CurrenciesFromJson::class.java)
 
     suspend fun getSupportedTokens(
-        isTestNet: Boolean = false,
+        isTestNet: Boolean,
         supportedBlockchains: List<Blockchain>,
         page: Int,
-        searchInput: String? = null,
+        searchInput: String?,
     ): Result<LoadedCoins> {
         if (isTestNet) {
             return Result.Success(
@@ -33,15 +33,17 @@ class LoadAvailableCoinsService(
                 ),
             )
         }
-        val offset = page * LOAD_PER_PAGE
-        val result = loadCoins(supportedBlockchains, offset, searchInput)
 
-        return when (result) {
+        val offset = page * LOAD_PER_PAGE
+        return when (val result = loadCoins(supportedBlockchains, offset, searchInput)) {
             is Result.Success -> {
                 val data = result.data
+
                 Result.Success(
                     LoadedCoins(
-                        currencies = data.coins.map { Currency.fromCoinResponse(it, data.imageHost) },
+                        currencies = data.coins.map {
+                            Currency.fromCoinResponse(currency = it, imageHost = data.imageHost)
+                        },
                         moreAvailable = data.total > offset + LOAD_PER_PAGE,
                     ),
                 )
@@ -55,27 +57,29 @@ class LoadAvailableCoinsService(
     private suspend fun loadCoins(
         supportedBlockchains: List<Blockchain>,
         offset: Int,
-        searchInput: String? = null,
+        searchInput: String?,
     ): Result<CoinsResponse> {
         return withContext(dispatchers.io) {
             runCatching {
                 tangemTechApi.getCoins(
-                    networkIds = supportedBlockchains.toSet().map(Blockchain::toNetworkId).joinToString(","),
+                    networkIds = supportedBlockchains.joinToString(
+                        separator = ",",
+                        transform = Blockchain::toNetworkId,
+                    ),
                     active = true,
                     searchText = searchInput,
                     offset = offset,
                     limit = LOAD_PER_PAGE,
                 )
-            }
-                .onSuccess { return@withContext Result.Success(it) }
-                .onFailure { return@withContext Result.Failure(it) }
-
-            error("Unreachable code because runCatching must return result")
+            }.fold(
+                onSuccess = { Result.Success(it) },
+                onFailure = { Result.Failure(it) },
+            )
         }
     }
 
-    fun getTestnetCoins(): List<Currency> {
-        val json = assetReader.readAssetAsString(FILE_NAME_TESTNET_COINS)
+    private fun getTestnetCoins(): List<Currency> {
+        val json = assetReader.readJson(FILE_NAME_TESTNET_COINS)
         return currenciesAdapter.fromJson(json)!!.coins
             .map { Currency.fromJsonObject(it) }
     }
@@ -83,15 +87,15 @@ class LoadAvailableCoinsService(
     private fun List<Currency>.filter(searchInput: String?): List<Currency> {
         if (searchInput.isNullOrBlank()) return this
 
-        return filter {
-            it.symbol.contains(searchInput, ignoreCase = true) ||
-                it.name.contains(searchInput, ignoreCase = true)
+        return filter { currency ->
+            currency.symbol.contains(searchInput, ignoreCase = true) ||
+                currency.name.contains(searchInput, ignoreCase = true)
         }
     }
 
-    companion object {
+    private companion object {
         const val LOAD_PER_PAGE = 100
-        private const val FILE_NAME_TESTNET_COINS = "testnet_tokens"
+        const val FILE_NAME_TESTNET_COINS = "testnet_tokens"
     }
 }
 

@@ -1,24 +1,14 @@
 package com.tangem.tap.common.feedback
 
 import android.content.Context
-import android.os.Build
-import com.tangem.core.analytics.Analytics
+import com.tangem.datasource.config.models.ChatConfig
 import com.tangem.domain.common.TapWorkarounds
+import com.tangem.tap.common.chat.ChatManager
 import com.tangem.tap.common.extensions.sendEmail
 import com.tangem.tap.common.log.TangemLogCollector
-import com.tangem.tap.common.zendesk.ZendeskConfig
 import com.tangem.tap.foregroundActivityObserver
-import com.tangem.tap.persistence.PreferencesStorage
 import com.tangem.tap.withForegroundActivity
-import com.tangem.wallet.R
 import timber.log.Timber
-import zendesk.chat.Chat
-import zendesk.chat.ChatConfiguration
-import zendesk.chat.ChatEngine
-import zendesk.chat.ChatProvidersConfiguration
-import zendesk.chat.VisitorInfo
-import zendesk.configurations.Configuration
-import zendesk.messaging.MessagingActivity
 import java.io.File
 import java.io.FileWriter
 import java.io.StringWriter
@@ -29,46 +19,64 @@ import java.io.StringWriter
 class FeedbackManager(
     val infoHolder: AdditionalFeedbackInfo,
     private val logCollector: TangemLogCollector,
-    private val preferencesStorage: PreferencesStorage,
+    private val chatManager: ChatManager,
 ) {
-    private var lastUsedConfigForInitialization: ZendeskConfig? = null
 
-    var chatInitializer: ((ZendeskConfig) -> Unit)? = null
-
-    fun initChat(zendeskConfig: ZendeskConfig) {
-        // prevent double initialization with the same config
-        if (lastUsedConfigForInitialization == zendeskConfig) return
-
-        lastUsedConfigForInitialization = zendeskConfig
-        chatInitializer?.invoke(zendeskConfig)
-    }
+    private var sessionFeedbackFile: File? = null
+    private var sessionLogsFile: File? = null
 
     fun sendEmail(feedbackData: FeedbackData, onFail: ((Exception) -> Unit)? = null) {
         feedbackData.prepare(infoHolder)
         foregroundActivityObserver.withForegroundActivity { activity ->
-            val fileLog = if (feedbackData is ScanFailsEmail) createLogFile(activity) else null
             activity.sendEmail(
                 email = getSupportEmail(),
                 subject = activity.getString(feedbackData.subjectResId),
                 message = feedbackData.joinTogether(activity, infoHolder),
-                file = fileLog,
+                file = getLogFile(activity),
                 onFail = onFail,
             )
         }
     }
 
-    fun openChat(feedbackData: FeedbackData) {
-        feedbackData.prepare(infoHolder)
-        foregroundActivityObserver.withForegroundActivity { activity ->
-            setChatVisitorInfo()
-            setChatVisitorNote(activity, feedbackData)
-            showMessagingActivity(activity)
+    fun openChat(config: ChatConfig, feedbackData: FeedbackData) {
+        chatManager.open(
+            config = config,
+            createLogsFile = ::getLogFile,
+            createFeedbackFile = { context -> getFeedbackFile(context, feedbackData) },
+        )
+    }
+
+    private fun getFeedbackFile(context: Context, feedbackData: FeedbackData): File? {
+        return try {
+            if (sessionFeedbackFile != null) {
+                return sessionFeedbackFile
+            }
+            val file = File(context.filesDir, FEEDBACK_FILE)
+            file.delete()
+            file.createNewFile()
+
+            val feedback = feedbackData.run {
+                prepare(infoHolder)
+                joinTogether(context, infoHolder)
+            }
+            val fileWriter = FileWriter(file)
+            fileWriter.write(feedback)
+            fileWriter.close()
+
+            sessionFeedbackFile = file
+            sessionFeedbackFile
+        } catch (ex: Exception) {
+            Timber.e(ex, "Can't create the logs file")
+            null
         }
     }
 
-    private fun createLogFile(context: Context): File? {
+    private fun getLogFile(context: Context): File? {
         return try {
-            val file = File(context.filesDir, "logs.txt")
+            if (sessionLogsFile != null) {
+                return sessionLogsFile
+            }
+            val file = File(context.filesDir, LOGS_FILE)
             file.delete()
             file.createNewFile()
 
@@ -78,52 +86,12 @@ class FeedbackManager(
             fileWriter.write(stringWriter.toString())
             fileWriter.close()
             logCollector.clearLogs()
-            file
+            sessionLogsFile = file
+            sessionLogsFile
         } catch (ex: Exception) {
             Timber.e(ex, "Can't create the logs file")
             null
         }
-    }
-
-    private fun setChatVisitorInfo() {
-        if (preferencesStorage.chatFirstLaunchTime == null) {
-            preferencesStorage.chatFirstLaunchTime = System.currentTimeMillis()
-        }
-        val chatUserId = (preferencesStorage.chatFirstLaunchTime.toString() + Build.MODEL).hashCode()
-        val visitorInfo = VisitorInfo.builder()
-            .withName("User $chatUserId")
-            .build()
-
-        Chat.INSTANCE.chatProvidersConfiguration = ChatProvidersConfiguration.builder()
-            .withVisitorInfo(visitorInfo)
-            .build()
-    }
-
-    private fun setChatVisitorNote(
-        context: Context,
-        feedbackData: FeedbackData,
-    ) {
-        Chat.INSTANCE.providers()
-            ?.profileProvider()
-            ?.setVisitorNote(feedbackData.joinTogether(context, infoHolder))
-    }
-
-    private fun showMessagingActivity(context: Context) {
-        Analytics.send(com.tangem.tap.common.analytics.events.Chat.ScreenOpened())
-        MessagingActivity.builder()
-            .withMultilineResponseOptionsEnabled(false)
-            .withBotLabelStringRes(R.string.chat_bot_name)
-            .withBotAvatarDrawable(R.mipmap.ic_launcher)
-            .withEngines(ChatEngine.engine())
-            .show(context, buildChatConfig())
-    }
-
-    private fun buildChatConfig(): Configuration {
-        return ChatConfiguration.builder()
-            .withOfflineFormEnabled(true)
-            .withAgentAvailabilityEnabled(true)
-            .withPreChatFormEnabled(false)
-            .build()
     }
 
     private fun getSupportEmail(): String {
@@ -137,5 +105,7 @@ class FeedbackManager(
     companion object {
         const val DEFAULT_SUPPORT_EMAIL = "support@tangem.com"
         const val S2C_SUPPORT_EMAIL = "cardsupport@start2coin.com"
+        const val FEEDBACK_FILE = "feedback.txt"
+        const val LOGS_FILE = "logs.txt"
     }
 }

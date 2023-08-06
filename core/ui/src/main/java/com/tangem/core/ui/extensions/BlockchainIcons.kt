@@ -32,6 +32,17 @@ fun getActiveIconRes(blockchainId: String): Int {
         "Kusama" -> R.drawable.img_kusama_22
         "OPTIMISM", "OPTIMISM/test" -> R.drawable.img_optimism_22
         "DASH" -> R.drawable.img_dash_22
+        "KAS" -> R.drawable.img_kaspa_22
+        "The-Open-Network", "The-Open-Network/test" -> R.drawable.img_ton_22
+        "KAVA", "KAVA/test" -> R.drawable.img_kava_22
+        "ravencoin", "ravencoin/test" -> R.drawable.img_ravencoin_22
+        "cosmos", "cosmos/test" -> R.drawable.img_cosmos_22
+        "terra", "terra-luna" -> R.drawable.img_terra_22
+        "terra-2", "terra-luna-2" -> R.drawable.img_terra2_22
+        "cronos" -> R.drawable.img_cronos_22
+        "TELOS", "TELOS/test" -> R.drawable.img_telos_22
+        "aleph-zero", "aleph-zero/test" -> R.drawable.img_azero_22
+        "octaspace", "octaspace/test" -> R.drawable.img_octaspace_22
         else -> R.drawable.ic_alert_24
     }
 }
@@ -70,6 +81,14 @@ fun getActiveIconResByCoinId(coinId: String, networkId: String): Int {
         "ethereumfair" -> R.drawable.img_eth_fair_22
         "kusama" -> R.drawable.img_kusama_22
         "dash" -> R.drawable.img_dash_22
+        "kaspa" -> R.drawable.img_kaspa_22
+        "ton" -> R.drawable.img_ton_22
+        "kava" -> R.drawable.img_kava_22
+        "ravencoin" -> R.drawable.img_ravencoin_22
+        "terra" -> R.drawable.img_terra_22
+        "terra-2" -> R.drawable.img_terra2_22
+        "telos" -> R.drawable.img_telos_22
+        "octaspace" -> R.drawable.img_octaspace_22
         else -> R.drawable.ic_alert_24
     }
 }

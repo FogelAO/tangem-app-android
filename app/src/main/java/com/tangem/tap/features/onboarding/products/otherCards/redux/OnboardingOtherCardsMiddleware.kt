@@ -3,18 +3,16 @@ package com.tangem.tap.features.onboarding.products.otherCards.redux
 import com.tangem.blockchain.common.Blockchain
 import com.tangem.common.CompletionResult
 import com.tangem.core.analytics.Analytics
+import com.tangem.domain.common.BlockchainNetwork
 import com.tangem.domain.common.extensions.withMainContext
-import com.tangem.tap.DELAY_SDK_DIALOG_CLOSE
+import com.tangem.domain.common.util.cardTypesResolver
+import com.tangem.tap.*
 import com.tangem.tap.common.analytics.events.Onboarding
 import com.tangem.tap.common.postUi
 import com.tangem.tap.common.redux.AppState
 import com.tangem.tap.common.redux.global.GlobalAction
-import com.tangem.tap.domain.tokens.models.BlockchainNetwork
 import com.tangem.tap.features.onboarding.OnboardingHelper
-import com.tangem.tap.features.wallet.redux.WalletAction
-import com.tangem.tap.scope
-import com.tangem.tap.store
-import com.tangem.tap.tangemSdkManager
+import com.tangem.tap.features.wallet.models.toCurrencies
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.rekotlin.Action
@@ -86,6 +84,7 @@ private fun handleOtherCardsAction(action: Action) {
                             val updatedCard = updatedResponse.card
                             onboardingManager.scanResponse = updatedResponse
                             onboardingManager.activationStarted(updatedCard.cardId)
+                            store.state.globalState.topUpController?.registerEmptyWallet(updatedResponse)
 
                             val primaryBlockchain = updatedResponse.cardTypesResolver.getBlockchain()
                             val blockchainNetworks = if (primaryBlockchain != Blockchain.Unknown) {
@@ -112,16 +111,17 @@ private fun handleOtherCardsAction(action: Action) {
                                 )
                             }
 
-                            store.dispatch(
-                                WalletAction.MultiWallet.SaveCurrencies(blockchainNetworks, updatedResponse.card),
-                            )
+                            scope.launch {
+                                userTokensRepository.saveUserTokens(
+                                    card = result.data.card,
+                                    tokens = blockchainNetworks.toCurrencies(),
+                                )
+                            }
 
                             delay(DELAY_SDK_DIALOG_CLOSE)
                             store.dispatch(OnboardingOtherCardsAction.SetStepOfScreen(OnboardingOtherCardsStep.Done))
                         }
-                        is CompletionResult.Failure -> {
-//                            do nothing
-                        }
+                        is CompletionResult.Failure -> Unit
                     }
                 }
             }
@@ -130,9 +130,9 @@ private fun handleOtherCardsAction(action: Action) {
             store.dispatch(GlobalAction.Onboarding.Stop)
             OnboardingHelper.trySaveWalletAndNavigateToWalletScreen(onboardingManager.scanResponse)
         }
-        is OnboardingOtherCardsAction.Confetti.Hide,
-        is OnboardingOtherCardsAction.SetArtworkUrl,
-        is OnboardingOtherCardsAction.Confetti.Show,
-        -> Unit
+        OnboardingOtherCardsAction.OnBackPressed -> {
+            OnboardingHelper.onInterrupted()
+        }
+        else -> Unit
     }
 }

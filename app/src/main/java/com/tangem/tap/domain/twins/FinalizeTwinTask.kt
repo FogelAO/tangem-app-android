@@ -4,7 +4,7 @@ import com.tangem.common.CompletionResult
 import com.tangem.common.KeyPair
 import com.tangem.common.core.CardSession
 import com.tangem.common.core.CardSessionRunnable
-import com.tangem.domain.common.ScanResponse
+import com.tangem.domain.models.scan.ScanResponse
 import com.tangem.operations.PreflightReadMode
 import com.tangem.operations.PreflightReadTask
 import com.tangem.tap.domain.tasks.product.ScanProductTask
@@ -16,10 +16,7 @@ class FinalizeTwinTask(
 
     override val allowsRequestAccessCodeFromRepository: Boolean = false
 
-    override fun run(
-        session: CardSession,
-        callback: (result: CompletionResult<ScanResponse>) -> Unit,
-    ) {
+    override fun run(session: CardSession, callback: (result: CompletionResult<ScanResponse>) -> Unit) {
         WriteProtectedIssuerDataTask(twinPublicKey, issuerKeys).run(session) { result ->
             when (result) {
                 is CompletionResult.Success ->

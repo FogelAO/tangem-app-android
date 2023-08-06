@@ -6,63 +6,51 @@ import com.tangem.common.core.TangemSdkError
 import com.tangem.datasource.api.tangemTech.TangemTechApi
 import com.tangem.datasource.api.tangemTech.TangemTechService
 import com.tangem.datasource.api.tangemTech.models.UserTokensResponse
-import com.tangem.domain.common.CardDTO
-import com.tangem.tap.common.AndroidFileReader
-import com.tangem.tap.domain.model.builders.UserWalletIdBuilder
+import com.tangem.datasource.connection.NetworkConnectionManager
+import com.tangem.datasource.files.AndroidFileReader
+import com.tangem.domain.common.BlockchainNetwork
+import com.tangem.domain.models.scan.CardDTO
+import com.tangem.domain.userwallets.UserWalletIdBuilder
 import com.tangem.tap.domain.tokens.converters.CurrencyConverter
-import com.tangem.tap.domain.tokens.models.BlockchainNetwork
 import com.tangem.tap.features.demo.DemoHelper
 import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.features.wallet.models.toBlockchainNetworks
 import com.tangem.tap.features.wallet.models.toCurrencies
-import com.tangem.tap.network.NetworkConnectivity
 import com.tangem.utils.coroutines.AppCoroutineDispatcherProvider
 import com.tangem.utils.coroutines.CoroutineDispatcherProvider
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 class UserTokensRepository(
     private val storageService: UserTokensStorageService,
     private val tangemTechApi: TangemTechApi,
     private val dispatchers: CoroutineDispatcherProvider,
+    private val networkConnectionManager: NetworkConnectionManager,
 ) {
 
-    // TODO("After adding DI") replace with CoroutineDispatcherProvider
     suspend fun getUserTokens(card: CardDTO): List<Currency> = withContext(dispatchers.io) {
-        val userId = getUserWalletId(card) ?: return@withContext emptyList()
+        val userWalletId = getUserWalletId(card) ?: return@withContext emptyList()
+
         if (DemoHelper.isDemoCardId(card.cardId)) {
-            return@withContext loadTokensOffline(card, userId).ifEmpty(::loadDemoCurrencies)
+            return@withContext loadTokensOffline(userWalletId = userWalletId).ifEmpty(::loadDemoCurrencies)
         }
 
-        if (!NetworkConnectivity.getInstance().isOnlineOrConnecting()) {
-            return@withContext loadTokensOffline(card, userId)
-        }
+        if (!networkConnectionManager.isOnline) return@withContext loadTokensOffline(userWalletId = userWalletId)
 
-        runCatching { tangemTechApi.getUserTokens(userId) }
-            .onSuccess { response ->
-                return@withContext response.tokens
-                    .mapNotNull(Currency.Companion::fromTokenResponse).also {
-                        storageService.saveUserTokens(userId, it.toUserTokensResponse())
-                    }
-                    .distinct()
-            }
-            .onFailure {
-                return@withContext handleGetUserTokensFailure(card = card, userId = userId, error = it)
-            }
-
-        error("Unreachable code because runCatching must return result")
+        return@withContext remoteGetUserTokens(userWalletId = userWalletId)
     }
 
-    // TODO("After adding DI") replace with CoroutineDispatcherProvider
     suspend fun saveUserTokens(card: CardDTO, tokens: List<Currency>) = withContext(dispatchers.io) {
-        val userId = getUserWalletId(card) ?: return@withContext
+        val userWalletId = getUserWalletId(card) ?: return@withContext
         val userTokens = tokens.toUserTokensResponse()
-        tangemTechApi.saveUserTokens(userId, userTokens)
-        storageService.saveUserTokens(userId, userTokens)
+        remoteSaveUserTokens(userWalletId = userWalletId, userTokens = userTokens)
+        storageService.saveUserTokens(userWalletId = userWalletId, tokens = userTokens)
     }
 
+    // FIXME: Move to data layer
     suspend fun loadBlockchainsToDerive(card: CardDTO): List<BlockchainNetwork> = withContext(dispatchers.io) {
-        val userId = getUserWalletId(card) ?: return@withContext emptyList()
-        val blockchainNetworks = loadTokensOffline(card = card, userId = userId).toBlockchainNetworks()
+        val userWalletId = getUserWalletId(card) ?: return@withContext emptyList()
+        val blockchainNetworks = loadTokensOffline(userWalletId = userWalletId).toBlockchainNetworks()
 
         if (DemoHelper.isDemoCardId(card.cardId)) {
             return@withContext blockchainNetworks.ifEmpty(loadDemoCurrencies()::toBlockchainNetworks)
@@ -71,10 +59,11 @@ class UserTokensRepository(
         return@withContext blockchainNetworks
     }
 
-    private suspend fun loadTokensOffline(card: CardDTO, userId: String): List<Currency> {
-        return storageService.getUserTokens(userId) ?: storageService.getUserTokens(card)
+    private fun loadTokensOffline(userWalletId: String): List<Currency> {
+        return storageService.getUserTokens(userWalletId = userWalletId) ?: emptyList()
     }
 
+    // FIXME: Move to user wallet config
     private fun loadDemoCurrencies(): List<Currency> {
         return DemoHelper.config.demoBlockchains
             .map { blockchain ->
@@ -87,54 +76,64 @@ class UserTokensRepository(
             .flatMap(BlockchainNetwork::toCurrencies)
     }
 
-    private fun List<Currency>.toUserTokensResponse() = UserTokensResponse(
-        tokens = CurrencyConverter.convertList(this),
-        group = GROUP_DEFAULT_VALUE,
-        sort = SORT_DEFAULT_VALUE,
-    )
+    private fun List<Currency>.toUserTokensResponse(): UserTokensResponse {
+        return UserTokensResponse(
+            tokens = CurrencyConverter.convertList(input = this),
+            group = UserTokensResponse.GroupType.NONE,
+            sort = UserTokensResponse.SortType.MANUAL,
+        )
+    }
 
-    private suspend fun handleGetUserTokensFailure(card: CardDTO, userId: String, error: Throwable): List<Currency> {
+    private suspend fun handleGetUserTokensFailure(userWalletId: String, error: Throwable): List<Currency> {
         return when {
-            error is TangemSdkError.NetworkError && error.customMessage.contains(NOT_FOUND_HTTP_CODE) ->
-                storageService.getUserTokens(card).also {
-                    tangemTechApi.saveUserTokens(userId = userId, userTokens = it.toUserTokensResponse())
-                }
+            error is TangemSdkError.NetworkError && error.customMessage.contains(NOT_FOUND_HTTP_CODE) -> {
+                storageService
+                    .getUserTokens(userWalletId)
+                    ?.also { remoteSaveUserTokens(userWalletId = userWalletId, userTokens = it.toUserTokensResponse()) }
+                    ?: emptyList()
+            }
             else -> {
-                val tokens = storageService.getUserTokens(userId) ?: storageService.getUserTokens(card)
-                tokens.distinct()
+                storageService.getUserTokens(userWalletId)?.distinct() ?: emptyList()
             }
         }
     }
 
-    private fun getUserWalletId(card: CardDTO): String? {
-        return UserWalletIdBuilder.card(card).build()
-            ?.stringValue
+    private suspend fun remoteGetUserTokens(userWalletId: String): List<Currency> {
+        return runCatching { tangemTechApi.getUserTokens(userWalletId) }
+            .fold(
+                onSuccess = { response ->
+                    response.tokens
+                        .mapNotNull(Currency.Companion::fromTokenResponse)
+                        .also { storageService.saveUserTokens(userWalletId, it.toUserTokensResponse()) }
+                        .distinct()
+                },
+                onFailure = { handleGetUserTokensFailure(userWalletId = userWalletId, error = it) },
+            )
     }
 
+    private suspend fun remoteSaveUserTokens(userWalletId: String, userTokens: UserTokensResponse) {
+        // it can throw okhttp3.internal.http2.StreamResetException: stream was reset: INTERNAL_ERROR
+        // if the /user-tokens endpoint disabled
+        runCatching { tangemTechApi.saveUserTokens(userWalletId, userTokens) }
+            .onFailure { Timber.e(it) }
+    }
+
+    private fun getUserWalletId(card: CardDTO): String? = UserWalletIdBuilder.card(card).build()?.stringValue
+
     companion object {
-        private const val GROUP_DEFAULT_VALUE = "none"
-        private const val SORT_DEFAULT_VALUE = "manual"
         private const val NOT_FOUND_HTTP_CODE = "404"
 
         // TODO("After adding DI") get dependencies by DI
-        fun init(context: Context, tangemTechService: TangemTechService): UserTokensRepository {
-            val fileReader = AndroidFileReader(context)
-            val dispatchers = AppCoroutineDispatcherProvider()
-
-            val oldUserTokensRepository = OldUserTokensRepository(
-                fileReader = fileReader,
-                tangemTechApi = tangemTechService.api,
-                dispatchers = dispatchers,
-            )
-            val storageService = UserTokensStorageService(
-                oldUserTokensRepository = oldUserTokensRepository,
-                fileReader = fileReader,
-            )
-
+        fun init(
+            context: Context,
+            tangemTechService: TangemTechService,
+            networkConnectionManager: NetworkConnectionManager,
+        ): UserTokensRepository {
             return UserTokensRepository(
-                storageService = storageService,
+                storageService = UserTokensStorageService(fileReader = AndroidFileReader(context)),
                 tangemTechApi = tangemTechService.api,
-                dispatchers = dispatchers,
+                dispatchers = AppCoroutineDispatcherProvider(),
+                networkConnectionManager = networkConnectionManager,
             )
         }
     }

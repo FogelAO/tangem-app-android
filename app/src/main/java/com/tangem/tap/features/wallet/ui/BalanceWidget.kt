@@ -3,79 +3,47 @@ package com.tangem.tap.features.wallet.ui
 import androidx.annotation.IdRes
 import com.tangem.tap.common.extensions.hide
 import com.tangem.tap.common.extensions.show
+import com.tangem.tap.domain.model.WalletDataModel
+import com.tangem.tap.features.wallet.ui.utils.getFormattedCryptoAmount
+import com.tangem.tap.features.wallet.ui.utils.getFormattedFiatAmount
+import com.tangem.tap.store
 import com.tangem.wallet.R
 import com.tangem.wallet.databinding.CardBalanceBinding
-import java.math.BigDecimal
-
-enum class BalanceStatus {
-    VerifiedOnline,
-    TransactionInProgress,
-    SameCurrencyTransactionInProgress,
-    Unreachable,
-    Loading,
-    Refreshing,
-    NoAccount,
-    EmptyCard,
-    UnknownBlockchain,
-    MissedDerivation,
-}
-
-data class BalanceWidgetData(
-    val status: BalanceStatus? = null,
-    val currency: String? = null,
-    val currencySymbol: String? = null,
-    val blockchainAmount: BigDecimal? = BigDecimal.ZERO,
-    val amount: BigDecimal? = null,
-    val amountFormatted: String? = null,
-    val fiatAmount: BigDecimal? = null,
-    val fiatAmountFormatted: String? = null,
-    val token: TokenData? = null,
-    val amountToCreateAccount: String? = null,
-    val errorMessage: String? = null,
-)
-
-data class TokenData(
-    val amountFormatted: String?,
-    val amount: BigDecimal? = null,
-    val tokenSymbol: String,
-    val fiatAmountFormatted: String? = null,
-    val fiatAmount: BigDecimal? = null,
-    val fiatRateString: String? = null,
-    val fiatRate: BigDecimal? = null,
-)
 
 class BalanceWidget(
     private val binding: CardBalanceBinding,
     private val fragment: WalletFragment,
-    private val data: BalanceWidgetData,
-    private val isTwinCard: Boolean,
+    private val blockchainWalletData: WalletDataModel,
+    private val tokenWalletData: WalletDataModel?,
 ) {
 
     @Suppress("LongMethod", "ComplexMethod")
     fun setup() {
-        when (data.status) {
-            BalanceStatus.Loading -> {
+        when (blockchainWalletData.status) {
+            is WalletDataModel.Loading -> {
                 with(binding) {
                     lBalance.root.show()
                     lBalanceError.root.hide()
                     lBalance.tvFiatAmount.hide()
 
-                    lBalance.tvCurrency.text = data.currency
+                    lBalance.tvCurrency.text = blockchainWalletData.currency.currencyName
                     lBalance.tvAmount.text = ""
                 }
 
                 showStatus(R.id.tv_status_loading)
 
-                if (data.token != null) {
-                    showBalanceWithToken(data, false)
+                if (tokenWalletData != null) {
+                    showBalanceWithToken(blockchainWalletData, false)
                 } else {
-                    showBalanceWithoutToken(data, false)
+                    showBalanceWithoutToken(blockchainWalletData, false)
                 }
             }
-            BalanceStatus.VerifiedOnline, BalanceStatus.TransactionInProgress -> with(binding.lBalance) {
+            is WalletDataModel.VerifiedOnline,
+            is WalletDataModel.TransactionInProgress,
+            -> with(binding.lBalance) {
                 root.show()
                 binding.lBalanceError.root.hide()
-                val statusView = if (data.status == BalanceStatus.VerifiedOnline) {
+                val statusView = if (blockchainWalletData.status is WalletDataModel.VerifiedOnline) {
                     R.id.tv_status_verified
                 } else {
                     tvStatusError.text =
@@ -85,60 +53,40 @@ class BalanceWidget(
                 showStatus(statusView)
                 tvStatusErrorMessage.hide()
 
-                if (data.token != null) {
-                    showBalanceWithToken(data, true)
+                if (tokenWalletData != null) {
+                    showBalanceWithToken(blockchainWalletData, true)
                 } else {
-                    showBalanceWithoutToken(data, true)
+                    showBalanceWithoutToken(blockchainWalletData, true)
                 }
             }
-            BalanceStatus.Unreachable -> with(binding.lBalance) {
+            is WalletDataModel.Unreachable -> with(binding.lBalance) {
                 root.show()
                 binding.lBalanceError.root.hide()
                 tvFiatAmount.hide()
                 groupBaseCurrency.hide()
 
-                val currency = if (data.token != null) data.token.tokenSymbol else data.currency
+                val currency = tokenWalletData?.currency?.currencySymbol
+                    ?: blockchainWalletData.currency.currencyName
                 tvCurrency.text = currency
                 tvAmount.text = ""
 
-                tvStatusErrorMessage.text = data.errorMessage
+                tvStatusErrorMessage.text = blockchainWalletData.status.errorMessage
                 tvStatusError.text =
                     fragment.getString(R.string.wallet_balance_blockchain_unreachable)
 
                 showStatus(R.id.group_error)
-                tvStatusErrorMessage.show(!data.errorMessage.isNullOrBlank())
+                tvStatusErrorMessage.show(!blockchainWalletData.status.errorMessage.isNullOrBlank())
             }
-            BalanceStatus.EmptyCard -> with(binding.lBalanceError) {
-                binding.lBalance.root.hide()
-                binding.lBalanceError.root.show()
-                if (isTwinCard) {
-                    tvErrorTitle.text = fragment.getText(R.string.wallet_error_empty_twin_card)
-                    tvErrorDescriptions.text =
-                        fragment.getText(R.string.wallet_error_empty_twin_card_subtitle)
-                } else {
-                    tvErrorTitle.text = fragment.getText(R.string.wallet_error_empty_card)
-                    tvErrorDescriptions.text =
-                        fragment.getText(R.string.wallet_error_empty_card_subtitle)
-                }
-            }
-            BalanceStatus.NoAccount -> with(binding.lBalanceError) {
+            is WalletDataModel.NoAccount -> with(binding.lBalanceError) {
                 binding.lBalance.root.hide()
                 binding.lBalanceError.root.show()
                 tvErrorTitle.text = fragment.getText(R.string.wallet_error_no_account)
                 tvErrorDescriptions.text =
                     fragment.getString(
                         R.string.no_account_generic,
-                        data.amountToCreateAccount,
-                        data.currencySymbol,
+                        blockchainWalletData.status.amountToCreateAccount,
+                        blockchainWalletData.currency.currencySymbol,
                     )
-            }
-            BalanceStatus.UnknownBlockchain -> with(binding.lBalanceError) {
-                binding.lBalance.root.hide()
-                binding.lBalanceError.root.show()
-                tvErrorTitle.text =
-                    fragment.getText(R.string.wallet_error_unsupported_blockchain)
-                tvErrorDescriptions.text =
-                    fragment.getString(R.string.wallet_error_unsupported_blockchain_subtitle)
             }
             else -> {}
         }
@@ -150,26 +98,25 @@ class BalanceWidget(
         tvStatusVerified.show(viewRes == R.id.tv_status_verified)
     }
 
-    private fun showBalanceWithToken(data: BalanceWidgetData, showAmount: Boolean) = with(binding.lBalance) {
+    private fun showBalanceWithToken(data: WalletDataModel, showAmount: Boolean) = with(binding.lBalance) {
         groupBaseCurrency.show()
-        tvCurrency.text = data.token?.tokenSymbol
-        tvBaseCurrency.text = data.currency
-        tvAmount.text = if (showAmount) data.token?.amountFormatted else ""
-        tvBaseAmount.text = if (showAmount) data.amountFormatted else ""
+        tvCurrency.text = tokenWalletData?.currency?.currencySymbol
+        tvBaseCurrency.text = data.currency.currencyName
+        tvAmount.text = if (showAmount) tokenWalletData?.getFormattedCryptoAmount() else ""
+        tvBaseAmount.text = if (showAmount) data.getFormattedCryptoAmount() else ""
         if (showAmount) {
             tvFiatAmount.show()
-            tvFiatAmount.text = data.token?.fiatAmountFormatted
+            tvFiatAmount.text = tokenWalletData?.getFormattedFiatAmount(store.state.globalState.appCurrency)
         }
     }
 
-    private fun showBalanceWithoutToken(data: BalanceWidgetData, showAmount: Boolean) =
-        with(binding.lBalance) {
-            groupBaseCurrency.hide()
-            tvCurrency.text = data.currency
-            tvAmount.text = if (showAmount) data.amountFormatted else ""
-            if (showAmount) {
-                tvFiatAmount.show()
-                tvFiatAmount.text = data.fiatAmountFormatted
-            }
+    private fun showBalanceWithoutToken(data: WalletDataModel, showAmount: Boolean) = with(binding.lBalance) {
+        groupBaseCurrency.hide()
+        tvCurrency.text = data.currency.currencyName
+        tvAmount.text = if (showAmount) data.getFormattedCryptoAmount() else ""
+        if (showAmount) {
+            tvFiatAmount.show()
+            tvFiatAmount.text = data.getFormattedFiatAmount(store.state.globalState.appCurrency)
         }
+    }
 }

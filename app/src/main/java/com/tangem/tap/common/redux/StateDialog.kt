@@ -2,8 +2,8 @@ package com.tangem.tap.common.redux
 
 import com.tangem.common.extensions.VoidCallback
 import com.tangem.tap.common.TestAction
+import com.tangem.tap.domain.model.WalletDataModel
 import com.tangem.tap.features.wallet.models.Currency
-import com.tangem.tap.features.wallet.redux.AddressData
 
 /**
  * Created by Anton Zhilenkov on 25/09/2021.
@@ -20,11 +20,23 @@ sealed class AppDialog : StateDialog {
         val onOk: VoidCallback? = null,
     ) : AppDialog()
 
+    data class OkCancelDialogRes(
+        val headerId: Int,
+        val messageId: Int,
+        val okButton: DialogButton,
+        val cancelButton: DialogButton,
+    ) : AppDialog()
+
+    data class DialogButton(
+        val title: Int,
+        val action: VoidCallback? = null,
+    )
+
     object ScanFailsDialog : AppDialog()
 
     data class AddressInfoDialog(
         val currency: Currency,
-        val addressData: AddressData,
+        val addressData: WalletDataModel.AddressData,
     ) : AppDialog()
 
     data class TestActionsDialog(

@@ -1,15 +1,15 @@
 package com.tangem.tap.domain.walletStores.repository.implementation
 
-import com.tangem.blockchain.common.Blockchain
 import com.tangem.common.CompletionResult
 import com.tangem.common.catching
-import com.tangem.domain.common.util.UserWalletId
+import com.tangem.domain.wallets.models.UserWalletId
 import com.tangem.tap.domain.model.WalletStoreModel
 import com.tangem.tap.domain.walletStores.repository.WalletStoresRepository
 import com.tangem.tap.domain.walletStores.repository.implementation.utils.isSameWalletStore
 import com.tangem.tap.domain.walletStores.repository.implementation.utils.replaceWalletStore
 import com.tangem.tap.domain.walletStores.repository.implementation.utils.updateWithSelf
 import com.tangem.tap.domain.walletStores.storage.WalletStoresStorage
+import com.tangem.tap.features.wallet.models.Currency
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -43,13 +43,13 @@ internal class DefaultWalletStoresRepository : WalletStoresRepository {
 
     override suspend fun deleteDifference(
         userWalletId: UserWalletId,
-        currentBlockchains: List<Blockchain>,
+        currentBlockchains: List<Currency.Blockchain>,
     ): CompletionResult<Unit> = catching {
-        if (currentBlockchains != getSync(userWalletId).map { it.blockchain }) {
+        if (currentBlockchains != getSync(userWalletId)) {
             walletStoresStorage.update { prevStores ->
                 prevStores.apply {
                     this[userWalletId] = this[userWalletId]
-                        ?.filter { it.blockchain in currentBlockchains }
+                        ?.filter { it.blockchainWalletData.currency in currentBlockchains }
                         .orEmpty()
                 }
             }
@@ -66,6 +66,25 @@ internal class DefaultWalletStoresRepository : WalletStoresRepository {
     ): CompletionResult<Unit> = catching {
         walletStoresStorage.update { prevStores ->
             prevStores.addOrUpdate(userWalletId, walletStore)
+        }
+    }
+
+    override suspend fun update(
+        userWalletId: UserWalletId,
+        operation: (List<WalletStoreModel>) -> WalletStoreModel?,
+    ): CompletionResult<Unit> = catching {
+        val walletStores = getSync(userWalletId).toMutableList()
+        val updatedWalletStore = operation(walletStores) ?: return CompletionResult.Success(Unit)
+
+        val index = walletStores.indexOfFirst { it.isSameWalletStore(updatedWalletStore) }
+        if (index == -1 || updatedWalletStore == walletStores[index]) return CompletionResult.Success(Unit)
+
+        walletStores[index] = updatedWalletStore
+
+        walletStoresStorage.update { prevStores ->
+            prevStores.apply {
+                this[userWalletId] = walletStores
+            }
         }
     }
 

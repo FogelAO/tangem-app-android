@@ -1,6 +1,6 @@
 package com.tangem.core.analytics.api
 
-import com.tangem.core.analytics.AnalyticsEvent
+import com.tangem.core.analytics.models.AnalyticsEvent
 
 /**
  * Created by Anton Zhilenkov on 23/09/2022.
@@ -22,10 +22,7 @@ interface AnalyticsHandler : AnalyticsEventHandler {
 }
 
 interface ErrorEventHandler {
-    fun send(
-        error: Throwable,
-        params: Map<String, String> = emptyMap(),
-    )
+    fun send(error: Throwable, params: Map<String, String> = emptyMap())
 }
 
 interface AnalyticsHandlerHolder {

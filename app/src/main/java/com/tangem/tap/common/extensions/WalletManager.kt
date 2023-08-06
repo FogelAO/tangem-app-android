@@ -5,15 +5,15 @@ import com.tangem.blockchain.common.BlockchainSdkError
 import com.tangem.blockchain.common.Wallet
 import com.tangem.blockchain.common.WalletManager
 import com.tangem.common.services.Result
+import com.tangem.domain.common.extensions.amountToCreateAccount
 import com.tangem.tap.common.TestActions
 import com.tangem.tap.domain.TapError
-import com.tangem.tap.domain.extensions.amountToCreateAccount
 import com.tangem.tap.domain.getFirstToken
+import com.tangem.tap.domain.model.WalletDataModel
 import com.tangem.tap.features.demo.isDemoCard
-import com.tangem.tap.features.wallet.redux.AddressData
 import com.tangem.tap.features.wallet.redux.reducers.createAddressesData
-import com.tangem.tap.network.NetworkConnectivity
 import com.tangem.tap.network.exchangeServices.CurrencyExchangeManager
+import com.tangem.tap.proxy.redux.DaggerGraphState
 import com.tangem.tap.store
 import kotlinx.coroutines.delay
 import timber.log.Timber
@@ -21,6 +21,10 @@ import timber.log.Timber
 /**
  * Created by Anton Zhilenkov on 03/10/2021.
  */
+@Deprecated(
+    message = "Use WalletStoresManager.fetch({userWalletId}, refresh = true) (to update all user wallet tokens)" +
+        "or WalletCurrenciesManager.update(...) (to update only one user wallet blockchain and its tokens) instead",
+)
 @Suppress("MagicNumber")
 suspend fun WalletManager.safeUpdate(): Result<Wallet> = try {
     val scanResponse = store.state.globalState.scanResponse
@@ -36,7 +40,8 @@ suspend fun WalletManager.safeUpdate(): Result<Wallet> = try {
 } catch (exception: Exception) {
     Timber.e(exception)
 
-    if (!NetworkConnectivity.getInstance().isOnlineOrConnecting()) {
+    val networkConnectionManager = store.state.daggerGraphState.get(DaggerGraphState::networkConnectionManager)
+    if (!networkConnectionManager.isOnline) {
         Result.Failure(TapError.NoInternetConnection)
     } else {
         val blockchain = wallet.blockchain
@@ -69,7 +74,7 @@ fun WalletManager.getTopUpUrl(): String? {
     )
 }
 
-fun WalletManager?.getAddressData(): AddressData? {
+fun WalletManager?.getAddressData(): WalletDataModel.AddressData? {
     val wallet = this?.wallet ?: return null
 
     val addressDataList = wallet.createAddressesData()

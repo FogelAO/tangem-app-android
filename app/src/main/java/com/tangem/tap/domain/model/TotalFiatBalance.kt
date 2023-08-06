@@ -6,16 +6,19 @@ import java.math.BigDecimal
  * Represents fiat balance of [WalletStoreModel] list
  * @property amount Amount of the total balance
  * */
-sealed class TotalFiatBalance {
-    open val amount: BigDecimal = BigDecimal.ZERO
+sealed interface TotalFiatBalance {
+    val amount: BigDecimal?
 
-    object Loading : TotalFiatBalance()
+    object Loading : TotalFiatBalance {
+        override val amount: BigDecimal? = null
+    }
 
-    data class Error(
-        override val amount: BigDecimal,
-    ) : TotalFiatBalance()
+    object Failed : TotalFiatBalance {
+        override val amount: BigDecimal? = null
+    }
 
     data class Loaded(
         override val amount: BigDecimal,
-    ) : TotalFiatBalance()
+        val isWarning: Boolean,
+    ) : TotalFiatBalance
 }

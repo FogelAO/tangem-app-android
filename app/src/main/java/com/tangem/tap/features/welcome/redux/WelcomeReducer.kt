@@ -7,12 +7,14 @@ internal object WelcomeReducer {
     fun reduce(action: Action, state: AppState): WelcomeState {
         return if (action is WelcomeAction) {
             internalReduce(action, state.welcomeState)
-        } else state.welcomeState
+        } else {
+            state.welcomeState
+        }
     }
 
     private fun internalReduce(action: WelcomeAction, state: WelcomeState): WelcomeState {
         return when (action) {
-            is WelcomeAction.HandleIntentIfNeeded -> state.copy(intent = action.intent)
+            is WelcomeAction.SetInitialIntent -> state.copy(intent = action.intent)
             is WelcomeAction.ProceedWithBiometrics -> state.copy(isUnlockWithBiometricsInProgress = true)
             is WelcomeAction.ProceedWithCard -> state.copy(isUnlockWithCardInProgress = true)
             is WelcomeAction.ProceedWithBiometrics.Error -> state.copy(
@@ -26,6 +28,7 @@ internal object WelcomeReducer {
             is WelcomeAction.ProceedWithBiometrics.Success -> state.copy(isUnlockWithBiometricsInProgress = false)
             is WelcomeAction.ProceedWithCard.Success -> state.copy(isUnlockWithCardInProgress = false)
             is WelcomeAction.CloseError -> state.copy(error = null)
+            else -> state
         }
     }
 }

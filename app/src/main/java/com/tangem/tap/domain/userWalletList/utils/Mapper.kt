@@ -1,7 +1,7 @@
 package com.tangem.tap.domain.userWalletList.utils
 
-import com.tangem.domain.common.util.UserWalletId
-import com.tangem.tap.domain.model.UserWallet
+import com.tangem.domain.wallets.models.UserWallet
+import com.tangem.domain.wallets.models.UserWalletId
 import com.tangem.tap.domain.userWalletList.model.UserWalletPublicInformation
 import com.tangem.tap.domain.userWalletList.model.UserWalletSensitiveInformation
 
@@ -50,7 +50,9 @@ internal fun UserWallet.updateWith(sensitiveInformation: UserWalletSensitiveInfo
 internal fun List<UserWallet>.updateWith(
     walletIdToSensitiveInformation: Map<UserWalletId, UserWalletSensitiveInformation>,
 ): List<UserWallet> {
-    return if (walletIdToSensitiveInformation.isEmpty()) this else {
+    return if (walletIdToSensitiveInformation.isEmpty()) {
+        this
+    } else {
         this.map { wallet ->
             walletIdToSensitiveInformation[wallet.walletId]
                 ?.let(wallet::updateWith)

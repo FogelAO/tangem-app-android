@@ -4,8 +4,9 @@ import com.tangem.Message
 import com.tangem.blockchain.common.Amount
 import com.tangem.blockchain.common.Blockchain
 import com.tangem.blockchain.common.WalletManager
+import com.tangem.blockchain.common.transaction.TransactionFee
 import com.tangem.common.core.TangemSdkError
-import com.tangem.tap.common.redux.ErrorAction
+import com.tangem.tap.common.analytics.events.Token.Send.AddressEntered
 import com.tangem.tap.common.redux.StateDialog
 import com.tangem.tap.common.redux.ToastNotificationAction
 import com.tangem.tap.domain.TapError
@@ -26,22 +27,21 @@ interface SendScreenActionUi : SendScreenAction
 object ReleaseSendState : Action
 
 data class PrepareSendScreen(
+    val walletManager: WalletManager,
     val coinAmount: Amount?,
     val coinRate: BigDecimal?,
-    val walletManager: WalletManager?,
     val tokenAmount: Amount? = null,
     val tokenRate: BigDecimal? = null,
 ) : SendScreenAction
 
-// Address or PayId
-sealed class AddressPayIdActionUi : SendScreenActionUi {
-    data class HandleUserInput(val data: String) : AddressPayIdActionUi()
-    data class PasteAddressPayId(val data: String) : AddressPayIdActionUi()
-    data class CheckClipboard(val data: String?) : AddressPayIdActionUi()
-    object CheckAddressPayId : AddressPayIdActionUi()
-    data class SetTruncateHandler(val handler: (String) -> String) : AddressPayIdActionUi()
-    data class TruncateOrRestore(val truncate: Boolean) : AddressPayIdActionUi()
-    data class ChangePayIdState(val sendingToPayIdEnabled: Boolean) : AddressPayIdActionUi()
+// Address
+sealed class AddressActionUi : SendScreenActionUi {
+    data class HandleUserInput(val data: String) : AddressActionUi()
+    data class PasteAddress(val data: String, val sourceType: AddressEntered.SourceType) : AddressActionUi()
+    data class CheckClipboard(val data: String?) : AddressActionUi()
+    data class CheckAddress(val sourceType: AddressEntered.SourceType?) : AddressActionUi()
+    data class SetTruncateHandler(val handler: (String) -> String) : AddressActionUi()
+    data class TruncateOrRestore(val truncate: Boolean) : AddressActionUi()
 }
 
 sealed class TransactionExtrasAction : SendScreenActionUi {
@@ -65,29 +65,25 @@ sealed class TransactionExtrasAction : SendScreenActionUi {
     sealed class XrpDestinationTag : TransactionExtrasAction() {
         data class HandleUserInput(val data: String) : XrpDestinationTag()
     }
+
+    sealed class TonMemo : TransactionExtrasAction() {
+        data class HandleUserInput(val data: String) : TonMemo()
+    }
+
+    sealed class CosmosMemo : TransactionExtrasAction() {
+        data class HandleUserInput(val data: String) : CosmosMemo()
+    }
 }
 
-sealed class AddressPayIdVerifyAction : SendScreenAction {
+sealed class AddressVerifyAction : SendScreenAction {
     enum class Error {
-        PAY_ID_UNSUPPORTED_BY_BLOCKCHAIN,
-        PAY_ID_NOT_REGISTERED,
-        PAY_ID_REQUEST_FAILED,
         ADDRESS_INVALID_OR_UNSUPPORTED_BY_BLOCKCHAIN,
-        ADDRESS_SAME_AS_WALLET
+        ADDRESS_SAME_AS_WALLET,
     }
 
-    data class ChangePasteBtnEnableState(val isEnabled: Boolean) : AddressPayIdVerifyAction()
+    data class ChangePasteBtnEnableState(val isEnabled: Boolean) : AddressVerifyAction()
 
-    sealed class PayIdVerification : AddressPayIdVerifyAction() {
-        data class SetPayIdError(val error: Error?) : PayIdVerification()
-        data class SetPayIdWalletAddress(
-            val payId: String,
-            val payIdWalletAddress: String,
-            val isUserInput: Boolean,
-        ) : PayIdVerification()
-    }
-
-    sealed class AddressVerification : AddressPayIdVerifyAction() {
+    sealed class AddressVerification : AddressVerifyAction() {
         data class SetAddressError(val error: Error?) : AddressVerification()
         data class SetWalletAddress(val address: String, val isUserInput: Boolean) : AddressVerification()
     }
@@ -119,7 +115,7 @@ sealed class FeeAction : SendScreenAction {
 
     object RequestFee : FeeAction()
     sealed class FeeCalculation : FeeAction() {
-        data class SetFeeResult(val fee: List<Amount>) : FeeCalculation()
+        data class SetFeeResult(val fee: TransactionFee) : FeeCalculation()
         object ClearResult : FeeCalculation()
     }
 
@@ -146,13 +142,17 @@ sealed class SendAction : SendScreenAction {
         override val messageResource: Int = R.string.send_transaction_success
     }
 
-    data class SendError(override val error: TapError) : SendAction(), ErrorAction
-
     sealed class Dialog : SendAction(), StateDialog {
         data class TezosWarningDialog(
             val reduceCallback: () -> Unit,
             val sendAllCallback: () -> Unit,
             val reduceAmount: BigDecimal,
+        ) : Dialog()
+
+        data class KaspaWarningDialog(
+            val maxOutputs: Int,
+            val maxAmount: BigDecimal,
+            val onOk: () -> Unit,
         ) : Dialog()
 
         sealed class SendTransactionFails : Dialog() {

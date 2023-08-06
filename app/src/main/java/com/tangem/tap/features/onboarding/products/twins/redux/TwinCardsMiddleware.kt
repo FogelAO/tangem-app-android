@@ -4,28 +4,24 @@ import com.tangem.blockchain.extensions.Result
 import com.tangem.common.CompletionResult
 import com.tangem.common.extensions.guard
 import com.tangem.core.analytics.Analytics
-import com.tangem.domain.common.ScanResponse
+import com.tangem.core.navigation.AppScreen
+import com.tangem.core.navigation.NavigationAction
+import com.tangem.domain.common.extensions.makePrimaryWalletManager
 import com.tangem.domain.common.extensions.withMainContext
-import com.tangem.tap.DELAY_SDK_DIALOG_CLOSE
+import com.tangem.domain.common.util.twinsIsTwinned
+import com.tangem.domain.models.scan.ScanResponse
+import com.tangem.domain.userwallets.UserWalletIdBuilder
+import com.tangem.tap.*
 import com.tangem.tap.common.analytics.events.AnalyticsParam
 import com.tangem.tap.common.analytics.events.Onboarding
-import com.tangem.tap.common.extensions.dispatchDebugErrorNotification
-import com.tangem.tap.common.extensions.dispatchDialogShow
-import com.tangem.tap.common.extensions.dispatchErrorNotification
-import com.tangem.tap.common.extensions.dispatchOnMain
-import com.tangem.tap.common.extensions.dispatchOpenUrl
-import com.tangem.tap.common.extensions.getAddressData
-import com.tangem.tap.common.extensions.getTopUpUrl
+import com.tangem.tap.common.extensions.*
 import com.tangem.tap.common.postUi
 import com.tangem.tap.common.redux.AppDialog
 import com.tangem.tap.common.redux.AppState
 import com.tangem.tap.common.redux.global.GlobalAction
-import com.tangem.tap.common.redux.navigation.AppScreen
-import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.domain.TapError
-import com.tangem.tap.domain.extensions.makePrimaryWalletManager
-import com.tangem.tap.domain.model.builders.UserWalletIdBuilder
 import com.tangem.tap.domain.twins.TwinCardsManager
+import com.tangem.tap.domain.userWalletList.isLockedSync
 import com.tangem.tap.features.home.RUSSIA_COUNTRY_CODE
 import com.tangem.tap.features.onboarding.OnboardingDialog
 import com.tangem.tap.features.onboarding.OnboardingHelper
@@ -33,10 +29,6 @@ import com.tangem.tap.features.wallet.models.Currency
 import com.tangem.tap.features.wallet.redux.ProgressState
 import com.tangem.tap.features.wallet.redux.WalletAction
 import com.tangem.tap.features.wallet.redux.models.WalletDialog
-import com.tangem.tap.preferencesStorage
-import com.tangem.tap.scope
-import com.tangem.tap.store
-import com.tangem.tap.userWalletsListManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.rekotlin.Action
@@ -74,7 +66,7 @@ private fun handle(action: Action, dispatch: DispatchFunction) {
     fun updateScanResponse(response: ScanResponse) {
         when (twinCardsState.mode) {
             CreateTwinWalletMode.CreateWallet -> onboardingManager?.scanResponse = response
-            CreateTwinWalletMode.RecreateWallet -> store.dispatch(GlobalAction.SaveScanResponse(response))
+            CreateTwinWalletMode.RecreateWallet -> store.dispatchOnMain(GlobalAction.SaveScanResponse(response))
         }
     }
 
@@ -127,14 +119,9 @@ private fun handle(action: Action, dispatch: DispatchFunction) {
                     Analytics.send(Onboarding.Twins.ScreenOpened())
                     preferencesStorage.saveTwinsOnboardingShown()
                 }
-                TwinCardsStep.CreateFirstWallet -> {
+                is TwinCardsStep.CreateFirstWallet -> {
                     Analytics.send(Onboarding.CreateWallet.ScreenOpened())
                     Analytics.send(Onboarding.Twins.SetupStarted())
-                    scope.launch {
-                        userWalletsListManager.delete(
-                            listOfNotNull(UserWalletIdBuilder.scanResponse(getScanResponse()).build()),
-                        )
-                    }
                 }
                 TwinCardsStep.TopUpWallet -> {
                     Analytics.send(Onboarding.Topup.ScreenOpened())
@@ -161,6 +148,12 @@ private fun handle(action: Action, dispatch: DispatchFunction) {
             scope.launch {
                 when (val result = manager.createFirstWallet(action.initialMessage)) {
                     is CompletionResult.Success -> {
+                        // remove wallet only after first step of retwin
+                        scope.launch {
+                            userWalletsListManager.delete(
+                                listOfNotNull(UserWalletIdBuilder.scanResponse(getScanResponse()).build()),
+                            )
+                        }
                         Analytics.send(Onboarding.CreateWallet.WalletCreatedSuccessfully())
                         startCardActivation(result.data.cardId)
                         delay(DELAY_SDK_DIALOG_CLOSE)
@@ -204,6 +197,8 @@ private fun handle(action: Action, dispatch: DispatchFunction) {
                     is Result.Success -> {
                         Analytics.send(Onboarding.Twins.SetupFinished())
                         updateScanResponse(result.data)
+                        store.state.globalState.topUpController?.registerEmptyWallet(result.data)
+
                         delay(DELAY_SDK_DIALOG_CLOSE)
                         withMainContext {
                             when (twinCardsState.mode) {
@@ -260,9 +255,8 @@ private fun handle(action: Action, dispatch: DispatchFunction) {
         }
         is TwinCardsAction.Balance.Set -> {
             if (action.balance.balanceIsToppedUp()) {
-                scope.launch {
-                    withMainContext { store.dispatch(TwinCardsAction.SetStepOfScreen(TwinCardsStep.Done)) }
-                }
+                store.state.globalState.topUpController?.send(getScanResponse(), AnalyticsParam.CardBalanceState.Full)
+                store.dispatchOnMain(TwinCardsAction.SetStepOfScreen(TwinCardsStep.Done))
             }
         }
         is TwinCardsAction.ShowAddressInfoDialog -> {
@@ -320,14 +314,28 @@ private fun handle(action: Action, dispatch: DispatchFunction) {
                         twinCardsState.currentStep != TwinCardsStep.TopUpWallet &&
                         twinCardsState.currentStep != TwinCardsStep.Done
 
+                    OnboardingHelper.onInterrupted()
                     store.dispatch(TwinCardsAction.CardsManager.Release)
+
                     action.shouldResetTwinCardsWidget(shouldReturnCardBack) {
-                        store.dispatch(NavigationAction.PopBackTo(AppScreen.Home))
+                        store.dispatchOnMain(NavigationAction.PopBackTo(getPopBackScreen()))
                     }
                 }
                 store.dispatchDialogShow(OnboardingDialog.InterruptOnboarding(onOkCallback))
             }
         }
         else -> Unit
+    }
+}
+
+private fun getPopBackScreen(): AppScreen {
+    return if (userWalletsListManager.hasUserWallets) {
+        if (userWalletsListManager.isLockedSync) {
+            AppScreen.Welcome
+        } else {
+            AppScreen.Wallet
+        }
+    } else {
+        AppScreen.Home
     }
 }

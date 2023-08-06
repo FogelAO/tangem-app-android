@@ -1,10 +1,11 @@
 package com.tangem.tap.domain.userWalletList.implementation
 
 import com.tangem.common.*
-import com.tangem.domain.common.util.UserWalletId
-import com.tangem.tap.domain.model.UserWallet
-import com.tangem.tap.domain.userWalletList.UserWalletListError
-import com.tangem.tap.domain.userWalletList.UserWalletsListManager
+import com.tangem.common.extensions.guard
+import com.tangem.domain.wallets.legacy.UserWalletsListManager
+import com.tangem.domain.wallets.models.UserWallet
+import com.tangem.domain.wallets.models.UserWalletId
+import com.tangem.tap.domain.userWalletList.UserWalletsListError
 import com.tangem.tap.domain.userWalletList.model.UserWalletEncryptionKey
 import com.tangem.tap.domain.userWalletList.repository.SelectedUserWalletRepository
 import com.tangem.tap.domain.userWalletList.repository.UserWalletsKeysRepository
@@ -15,7 +16,6 @@ import com.tangem.tap.domain.userWalletList.utils.toUserWallets
 import com.tangem.tap.domain.userWalletList.utils.updateWith
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
-import timber.log.Timber
 
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class BiometricUserWalletsListManager(
@@ -23,7 +23,7 @@ internal class BiometricUserWalletsListManager(
     private val publicInformationRepository: UserWalletsPublicInformationRepository,
     private val sensitiveInformationRepository: UserWalletsSensitiveInformationRepository,
     private val selectedUserWalletRepository: SelectedUserWalletRepository,
-) : UserWalletsListManager {
+) : UserWalletsListManager.Lockable {
     private val state = MutableStateFlow(State())
 
     override val userWallets: Flow<List<UserWallet>>
@@ -50,32 +50,48 @@ internal class BiometricUserWalletsListManager(
     override val isLockedSync: Boolean
         get() = state.value.isLocked
 
-    override val hasSavedUserWallets: Boolean
+    override val hasUserWallets: Boolean
         get() = keysRepository.hasSavedEncryptionKeys()
 
-    override suspend fun unlockWithBiometry(): CompletionResult<UserWallet?> {
+    override val walletsCount: Int
+        get() = state.value.userWallets.size
+
+    override suspend fun unlock(): CompletionResult<UserWallet> {
         return unlockWithBiometryInternal()
-            .map { selectedUserWalletSync }
+            .mapFailure { error ->
+                if (error is UserWalletsListError) {
+                    error
+                } else {
+                    UserWalletsListError.UnableToUnlockUserWallets(cause = error)
+                }
+            }
+            .map {
+                selectedUserWalletSync.guard {
+                    throw UserWalletsListError.UnableToUnlockUserWallets(
+                        cause = IllegalStateException("No user wallet selected"),
+                    )
+                }
+            }
     }
 
     override fun lock() {
         state.update { State() }
     }
 
-    override suspend fun selectWallet(userWalletId: UserWalletId): CompletionResult<UserWallet> = catching {
+    override suspend fun select(userWalletId: UserWalletId): CompletionResult<UserWallet> = catching {
         if (state.value.selectedUserWalletId == userWalletId) {
             return@catching findSelectedUserWallet()!!
         }
 
         selectedUserWalletRepository.set(userWalletId)
 
-        state.update { prevState ->
+        val newState = state.updateAndGet { prevState ->
             prevState.copy(
                 selectedUserWalletId = userWalletId,
             )
         }
 
-        findSelectedUserWallet()!!
+        newState.userWallets.first { it.walletId == userWalletId }
     }
 
     override suspend fun save(userWallet: UserWallet, canOverride: Boolean): CompletionResult<Unit> {
@@ -84,11 +100,11 @@ internal class BiometricUserWalletsListManager(
         } else {
             val isWalletSaved = state.value.userWallets
                 .any {
-                    it.walletId == userWallet.walletId || it.cardsInWallet.contains(userWallet.cardId)
+                    it.walletId == userWallet.walletId
                 }
 
             if (isWalletSaved) {
-                CompletionResult.Failure(UserWalletListError.WalletAlreadySaved)
+                CompletionResult.Failure(UserWalletsListError.WalletAlreadySaved)
             } else {
                 saveInternal(userWallet, changeSelectedUserWallet = true)
             }
@@ -97,7 +113,7 @@ internal class BiometricUserWalletsListManager(
 
     override suspend fun update(
         userWalletId: UserWalletId,
-        update: (UserWallet) -> UserWallet,
+        update: suspend (UserWallet) -> UserWallet,
     ): CompletionResult<UserWallet> {
         return get(userWalletId)
             .map { storedUserWallet ->
@@ -105,26 +121,33 @@ internal class BiometricUserWalletsListManager(
             }
             .flatMap { updatedUserWallet ->
                 saveInternal(updatedUserWallet, changeSelectedUserWallet = false)
-                    .map { updatedUserWallet }
+            }
+            .flatMap {
+                get(userWalletId)
             }
     }
 
     override suspend fun delete(userWalletIds: List<UserWalletId>): CompletionResult<Unit> {
-        if (userWalletIds.isEmpty()) {
+        val idsToRemove = state.value.userWallets
+            .takeIf { it.isNotEmpty() }
+            ?.filter { it.walletId in userWalletIds }
+            ?.map { it.walletId }
+
+        if (idsToRemove.isNullOrEmpty()) {
             return CompletionResult.Success(Unit)
         }
 
-        changeSelectedUserWalletIdIfNeeded(userWalletIds)
+        changeSelectedUserWalletIdIfNeeded(idsToRemove)
 
-        return sensitiveInformationRepository.delete(userWalletIds)
-            .flatMap { publicInformationRepository.delete(userWalletIds) }
-            .flatMap { keysRepository.delete(userWalletIds) }
+        return sensitiveInformationRepository.delete(idsToRemove)
+            .flatMap { publicInformationRepository.delete(idsToRemove) }
+            .flatMap { keysRepository.delete(idsToRemove) }
             .map {
                 state.update { prevState ->
-                    val newUserWallets = prevState.userWallets.filter { it.walletId !in userWalletIds }
+                    val newUserWallets = prevState.userWallets.filter { it.walletId !in idsToRemove }
 
                     prevState.copy(
-                        encryptionKeys = prevState.encryptionKeys.filter { it.walletId !in userWalletIds },
+                        encryptionKeys = prevState.encryptionKeys.filter { it.walletId !in idsToRemove },
                         userWallets = newUserWallets,
                         isLocked = newUserWallets.any { it.isLocked },
                     )
@@ -155,7 +178,11 @@ internal class BiometricUserWalletsListManager(
         return saveEncryptionKeyIfNotNull(userWallet)
             .flatMap { sensitiveInformationRepository.save(userWallet, encryptionKey = it) }
             .flatMap { publicInformationRepository.save(userWallet) }
-            .map { selectedUserWalletRepository.set(userWallet.walletId) }
+            .map {
+                if (changeSelectedUserWallet) {
+                    selectedUserWalletRepository.set(userWallet.walletId)
+                }
+            }
             .flatMap { loadModels() }
             .doOnSuccess {
                 state.update { prevState ->
@@ -183,9 +210,8 @@ internal class BiometricUserWalletsListManager(
             .flatMap { loadModels() }
             .map {
                 state.update { prevState ->
-                    prevState.copy(
-                        isLocked = false,
-                    )
+                    val hasLockedUserWallets = prevState.userWallets.any { it.isLocked }
+                    prevState.copy(isLocked = hasLockedUserWallets)
                 }
             }
     }
@@ -227,9 +253,6 @@ internal class BiometricUserWalletsListManager(
                         )
                     }
                 }
-            }
-            .doOnFailure { error ->
-                Timber.e(error, "Unable to load user wallets")
             }
     }
 
@@ -284,8 +307,8 @@ internal class BiometricUserWalletsListManager(
     }
 
     private fun findSelectedUserWallet(userWallets: List<UserWallet> = state.value.userWallets): UserWallet? {
-        return userWallets.find {
-            it.walletId == state.value.selectedUserWalletId
+        return userWallets.firstOrNull {
+            it.walletId == state.value.selectedUserWalletId && !it.isLocked
         }
     }
 

@@ -67,7 +67,7 @@ class AmountMiddleware {
         }
 
         val amountToSend = Amount(typedAmount, sendState.getTotalAmountToSend(inputCrypto))
-        val transactionErrors = walletManager.validateTransaction(amountToSend, sendState.feeState.currentFee)
+        val transactionErrors = walletManager.validateTransaction(amountToSend, sendState.feeState.currentFee?.amount)
         val amountFieldErrors = filterErrorsForAmountField(transactionErrors)
         if (amountFieldErrors.isEmpty()) {
             dispatch(AmountAction.SetAmountError(null))
@@ -82,7 +82,7 @@ class AmountMiddleware {
         val sendState = appState?.sendState ?: return
 
         dispatch(AmountAction.SetAmount(sendState.amountState.balanceCrypto, false))
-        if (sendState.amountState.isCoinAmount()) {
+        if (sendState.amountState.canIncludeFee()) {
             dispatch(FeeAction.ChangeLayoutVisibility(main = true, controls = true))
             dispatch(FeeActionUi.ChangeIncludeFee(true))
         }

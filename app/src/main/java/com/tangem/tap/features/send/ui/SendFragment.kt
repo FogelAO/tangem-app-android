@@ -17,7 +17,8 @@ import by.kirich1409.viewbindingdelegate.viewBinding
 import com.google.android.material.textfield.TextInputEditText
 import com.tangem.Message
 import com.tangem.core.analytics.Analytics
-import com.tangem.tangem_sdk_new.extensions.hideSoftKeyboard
+import com.tangem.core.navigation.NavigationAction
+import com.tangem.sdk.extensions.hideSoftKeyboard
 import com.tangem.tap.common.KeyboardObserver
 import com.tangem.tap.common.analytics.events.Token
 import com.tangem.tap.common.entities.FiatCurrency
@@ -25,32 +26,16 @@ import com.tangem.tap.common.extensions.getFromClipboard
 import com.tangem.tap.common.extensions.setOnImeActionListener
 import com.tangem.tap.common.qrCodeScan.ScanQrCodeActivity
 import com.tangem.tap.common.recyclerView.SpaceItemDecoration
-import com.tangem.tap.common.redux.navigation.NavigationAction
 import com.tangem.tap.common.snackBar.MaxAmountSnackbar
 import com.tangem.tap.common.text.truncateMiddleWith
 import com.tangem.tap.common.toggleWidget.IndeterminateProgressButtonWidget
 import com.tangem.tap.common.toggleWidget.ViewStateWidget
 import com.tangem.tap.features.BaseStoreFragment
 import com.tangem.tap.features.addBackPressHandler
-import com.tangem.tap.features.send.redux.AddressPayIdActionUi
-import com.tangem.tap.features.send.redux.AddressPayIdActionUi.CheckClipboard
-import com.tangem.tap.features.send.redux.AddressPayIdActionUi.PasteAddressPayId
-import com.tangem.tap.features.send.redux.AddressPayIdActionUi.SetTruncateHandler
-import com.tangem.tap.features.send.redux.AddressPayIdActionUi.TruncateOrRestore
-import com.tangem.tap.features.send.redux.AmountAction
-import com.tangem.tap.features.send.redux.AmountActionUi
-import com.tangem.tap.features.send.redux.AmountActionUi.CheckAmountToSend
-import com.tangem.tap.features.send.redux.AmountActionUi.SetMainCurrency
-import com.tangem.tap.features.send.redux.AmountActionUi.SetMaxAmount
-import com.tangem.tap.features.send.redux.AmountActionUi.ToggleMainCurrency
-import com.tangem.tap.features.send.redux.FeeActionUi.ChangeIncludeFee
-import com.tangem.tap.features.send.redux.FeeActionUi.ChangeSelectedFee
-import com.tangem.tap.features.send.redux.FeeActionUi.ToggleControlsVisibility
-import com.tangem.tap.features.send.redux.ReceiptAction
-import com.tangem.tap.features.send.redux.ReleaseSendState
-import com.tangem.tap.features.send.redux.SendAction
-import com.tangem.tap.features.send.redux.SendActionUi
-import com.tangem.tap.features.send.redux.TransactionExtrasAction
+import com.tangem.tap.features.send.redux.*
+import com.tangem.tap.features.send.redux.AddressActionUi.*
+import com.tangem.tap.features.send.redux.AmountActionUi.*
+import com.tangem.tap.features.send.redux.FeeActionUi.*
 import com.tangem.tap.features.send.redux.states.FeeType
 import com.tangem.tap.features.send.redux.states.MainCurrencyType
 import com.tangem.tap.features.send.ui.stateSubscribers.SendStateSubscriber
@@ -60,19 +45,17 @@ import com.tangem.tap.mainScope
 import com.tangem.tap.store
 import com.tangem.wallet.R
 import com.tangem.wallet.databinding.FragmentSendBinding
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.*
 import java.text.DecimalFormatSymbols
+
+private const val EDIT_TEXT_INPUT_DEBOUNCE = 400L
 
 /**
  * Created by Anton Zhilenkov on 31/08/2020.
  */
+@OptIn(FlowPreview::class)
 class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
 
     lateinit var sendBtn: ViewStateWidget
@@ -97,7 +80,7 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
         etAmountToSend = view.findViewById(R.id.etAmountToSend)
 
         initSendButtonStates()
-        setupAddressOrPayIdLayout()
+        setupAddressLayout()
         setupTransactionExtrasLayout()
         setupAmountLayout()
         setupFeeLayout()
@@ -116,26 +99,42 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
         sendBtn = IndeterminateProgressButtonWidget(btnSend, progress)
     }
 
-    @Suppress("MagicNumber")
-    private fun setupAddressOrPayIdLayout() = with(binding.lSendAddressPayid) {
-        store.dispatch(SetTruncateHandler { etAddressOrPayId.truncateMiddleWith(it, "...") })
+    private fun setupAddressLayout() = with(binding.lSendAddress) {
+        store.dispatch(SetTruncateHandler { etAddress.truncateMiddleWith(it, "...") })
         store.dispatch(CheckClipboard(requireContext().getFromClipboard()?.toString()))
 
-        etAddressOrPayId.setOnFocusChangeListener { v, hasFocus ->
-            store.dispatch(TruncateOrRestore(!hasFocus))
-        }
-        etAddressOrPayId.inputtedTextAsFlow()
-            .debounce(400)
-            .filter { store.state.sendState.addressPayIdState.viewFieldValue.value != it }
-            .onEach {
-                store.dispatch(AddressPayIdActionUi.HandleUserInput(it))
+        etAddress.apply {
+            setOnSystemPasteButtonClickListener {
+                store.dispatch(
+                    PasteAddress(
+                        data = requireContext().getFromClipboard()?.toString() ?: "",
+                        sourceType = Token.Send.AddressEntered.SourceType.PastePopup,
+                    ),
+                )
             }
-            .launchIn(mainScope)
+
+            setOnFocusChangeListener { _, hasFocus ->
+                store.dispatch(TruncateOrRestore(!hasFocus))
+            }
+
+            inputtedTextAsFlow()
+                .debounce(EDIT_TEXT_INPUT_DEBOUNCE)
+                .filter { store.state.sendState.addressState.viewFieldValue.value != it }
+                .onEach {
+                    store.dispatch(AddressActionUi.HandleUserInput(it))
+                }
+                .launchIn(mainScope)
+        }
 
         imvPaste.setOnClickListener {
             Analytics.send(Token.Send.ButtonPaste())
-            store.dispatch(PasteAddressPayId(requireContext().getFromClipboard()?.toString() ?: ""))
-            store.dispatch(TruncateOrRestore(!etAddressOrPayId.isFocused))
+            store.dispatch(
+                PasteAddress(
+                    data = requireContext().getFromClipboard()?.toString() ?: "",
+                    sourceType = Token.Send.AddressEntered.SourceType.PasteButton,
+                ),
+            )
+            store.dispatch(TruncateOrRestore(!etAddress.isFocused))
         }
         imvQrCode.setOnClickListener {
             Analytics.send(Token.Send.ButtonQRCode())
@@ -146,9 +145,10 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
         }
     }
 
-    private fun setupTransactionExtrasLayout() = with(binding.lSendAddressPayid) {
+    private fun setupTransactionExtrasLayout() = with(binding.lSendAddress) {
+        // TODO: AND-3619
         etXlmMemo.inputtedTextAsFlow()
-            .debounce(400)
+            .debounce(EDIT_TEXT_INPUT_DEBOUNCE)
             .filter {
                 val info = store.state.sendState.transactionExtrasState
                 info.xlmMemo?.viewFieldValue?.value != it
@@ -157,7 +157,7 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
             .launchIn(mainScope)
 
         etDestinationTag.inputtedTextAsFlow()
-            .debounce(400)
+            .debounce(EDIT_TEXT_INPUT_DEBOUNCE)
             .filter {
                 val info = store.state.sendState.transactionExtrasState
                 info.xrpDestinationTag?.viewFieldValue?.value != it
@@ -166,12 +166,30 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
             .launchIn(mainScope)
 
         etBinanceMemo.inputtedTextAsFlow()
-            .debounce(400)
+            .debounce(EDIT_TEXT_INPUT_DEBOUNCE)
             .filter {
                 val info = store.state.sendState.transactionExtrasState
                 info.binanceMemo?.viewFieldValue?.value != it
             }
             .onEach { store.dispatch(TransactionExtrasAction.BinanceMemo.HandleUserInput(it)) }
+            .launchIn(mainScope)
+
+        etTonMemo.inputtedTextAsFlow()
+            .debounce(EDIT_TEXT_INPUT_DEBOUNCE)
+            .filter {
+                val info = store.state.sendState.transactionExtrasState
+                info.tonMemoState?.viewFieldValue?.value != it
+            }
+            .onEach { store.dispatch(TransactionExtrasAction.TonMemo.HandleUserInput(it)) }
+            .launchIn(mainScope)
+
+        etCosmosMemo.inputtedTextAsFlow()
+            .debounce(EDIT_TEXT_INPUT_DEBOUNCE)
+            .filter {
+                val info = store.state.sendState.transactionExtrasState
+                info.cosmosMemoState?.viewFieldValue?.value != it
+            }
+            .onEach { store.dispatch(TransactionExtrasAction.CosmosMemo.HandleUserInput(it)) }
             .launchIn(mainScope)
     }
 
@@ -184,10 +202,15 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
         // Delayed launch is needed in order for the UI to be drawn and to process the sent events.
         // If do not use the delay, then etAmount error field is not displayed when
         // inserting an incorrect amount by shareUri
-        binding.lSendAddressPayid.imvQrCode.postDelayed(
+        binding.lSendAddress.imvQrCode.postDelayed(
             {
-                store.dispatch(PasteAddressPayId(scannedCode))
-                store.dispatch(TruncateOrRestore(!binding.lSendAddressPayid.etAddressOrPayId.isFocused))
+                store.dispatch(
+                    PasteAddress(
+                        data = scannedCode,
+                        sourceType = Token.Send.AddressEntered.SourceType.QRCode,
+                    ),
+                )
+                store.dispatch(TruncateOrRestore(!binding.lSendAddress.etAddress.isFocused))
             },
             200,
         )
@@ -226,7 +249,7 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
         }
 
         etAmountToSend.keyListener = DigitsKeyListener.getInstance("0123456789,.")
-        etAmountToSend.setOnFocusChangeListener { v, hasFocus ->
+        etAmountToSend.setOnFocusChangeListener { _, hasFocus ->
             snackbarControlledByChangingFocus = true
             if (hasFocus) {
                 etAmountToSend.postDelayed(200) {
@@ -249,7 +272,7 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
         }
 
         etAmountToSend.inputtedTextAsFlow()
-            .debounce(400)
+            .debounce(EDIT_TEXT_INPUT_DEBOUNCE)
             .filter { store.state.sendState.amountState.viewAmountValue.value != it && it.isNotEmpty() }
             .onEach { store.dispatch(AmountActionUi.HandleUserInput(it)) }
             .launchIn(mainScope)
@@ -265,13 +288,13 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
             store.dispatch(ToggleControlsVisibility)
         }
         chipGroup.check(FeeUiHelper.toId(FeeType.NORMAL))
-        chipGroup.setOnCheckedChangeListener { group, checkedId ->
+        chipGroup.setOnCheckedChangeListener { _, checkedId ->
             if (checkedId == -1) return@setOnCheckedChangeListener
 
             store.dispatch(ChangeSelectedFee(FeeUiHelper.toType(checkedId)))
             store.dispatch(CheckAmountToSend)
         }
-        swIncludeFee.setOnCheckedChangeListener { btn, isChecked ->
+        swIncludeFee.setOnCheckedChangeListener { _, isChecked ->
             store.dispatch(ChangeIncludeFee(isChecked))
             store.dispatch(CheckAmountToSend)
         }
@@ -331,7 +354,6 @@ class SendFragment : BaseStoreFragment(R.layout.fragment_send) {
     }
 }
 
-@ExperimentalCoroutinesApi
 fun EditText.inputtedTextAsFlow(): Flow<String> = callbackFlow {
     val watcher = addTextChangedListener { editable -> trySend(editable?.toString() ?: "") }
     awaitClose { removeTextChangedListener(watcher) }

@@ -1,11 +1,7 @@
 package com.tangem.tap.features.welcome.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
@@ -15,12 +11,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import com.tangem.core.ui.components.PrimaryButtonIconRight
-import com.tangem.core.ui.components.SecondaryButton
-import com.tangem.core.ui.components.SpacerH12
-import com.tangem.core.ui.components.SpacerH16
-import com.tangem.core.ui.components.SpacerH32
-import com.tangem.core.ui.components.SpacerHMax
+import com.tangem.core.ui.components.*
 import com.tangem.core.ui.res.TangemTheme
 import com.tangem.wallet.R
 
@@ -76,13 +67,13 @@ internal fun WelcomeScreenContent(
             onClick = onUnlockClick,
         )
         SpacerH12()
-        PrimaryButtonIconRight(
+        PrimaryButtonIconEnd(
             modifier = Modifier
                 .padding(horizontal = TangemTheme.dimens.spacing16)
                 .fillMaxWidth(),
             text = stringResource(R.string.welcome_unlock_card),
             showProgress = showScanCardProgress,
-            icon = painterResource(id = R.drawable.ic_tangem_24),
+            iconResId = R.drawable.ic_tangem_24,
             onClick = onScanCardClick,
         )
         SpacerH16()
@@ -91,9 +82,7 @@ internal fun WelcomeScreenContent(
 
 // region Preview
 @Composable
-private fun WelcomeScreenContentSample(
-    modifier: Modifier = Modifier,
-) {
+private fun WelcomeScreenContentSample(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .background(TangemTheme.colors.background.primary),

@@ -2,21 +2,24 @@ package com.tangem.tap.features.walletSelector.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tangem.common.core.TangemError
 import com.tangem.core.analytics.Analytics
-import com.tangem.domain.common.util.UserWalletId
+import com.tangem.domain.wallets.models.UserWalletId
 import com.tangem.tap.common.analytics.events.MyWallets
 import com.tangem.tap.common.extensions.dispatchOnMain
+import com.tangem.tap.domain.userWalletList.UserWalletsListError
+import com.tangem.tap.domain.userWalletList.isLocked
+import com.tangem.tap.features.details.ui.cardsettings.TextReference
 import com.tangem.tap.features.walletSelector.redux.WalletSelectorAction
 import com.tangem.tap.features.walletSelector.redux.WalletSelectorState
 import com.tangem.tap.features.walletSelector.ui.model.DialogModel
+import com.tangem.tap.features.walletSelector.ui.model.MultiCurrencyUserWalletItem
+import com.tangem.tap.features.walletSelector.ui.model.SingleCurrencyUserWalletItem
+import com.tangem.tap.features.walletSelector.ui.model.WarningModel
 import com.tangem.tap.store
 import com.tangem.tap.userWalletsListManager
 import com.tangem.tap.walletStoresManager
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import org.rekotlin.StoreSubscriber
 
 internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSelectorState> {
@@ -47,7 +50,12 @@ internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSele
                 cancelWalletEditing(userWalletId)
             }
             selectedUserWalletId != userWalletId -> {
-                store.dispatch(WalletSelectorAction.SelectWallet(userWalletId))
+                store.dispatch(
+                    WalletSelectorAction.SelectWallet(
+                        userWalletId = userWalletId,
+                        sendAnalyticsEvent = true,
+                    ),
+                )
             }
         }
     }
@@ -136,14 +144,75 @@ internal class WalletSelectorViewModel : ViewModel(), StoreSubscriber<WalletSele
         store.dispatch(WalletSelectorAction.CloseError)
     }
 
+    // TODO: Refactor errors handling
     override fun newState(state: WalletSelectorState) {
         stateInternal.update { prevState ->
-            prevState.updateWithNewState(state)
+            val walletsUi = state.wallets.toUiModels(state.fiatCurrency)
+            val walletsIds = walletsUi.map { it.id }
+            val multiCurrencyWallets = arrayListOf<MultiCurrencyUserWalletItem>()
+            val singleCurrencyWallets = arrayListOf<SingleCurrencyUserWalletItem>()
+            walletsUi.forEach { wallet ->
+                when (wallet) {
+                    is MultiCurrencyUserWalletItem -> {
+                        multiCurrencyWallets.add(wallet)
+                    }
+                    is SingleCurrencyUserWalletItem -> {
+                        singleCurrencyWallets.add(wallet)
+                    }
+                }
+            }
+            val warningDialog = createWarningDialogIfNeeded(state.error, prevState.dialog)
+
+            prevState.copy(
+                multiCurrencyWallets = multiCurrencyWallets,
+                singleCurrencyWallets = singleCurrencyWallets,
+                selectedUserWalletId = state.selectedWalletId,
+                editingUserWalletsIds = prevState.editingUserWalletsIds.filter { it in walletsIds },
+                isLocked = state.isLocked,
+                showUnlockProgress = state.isUnlockInProgress,
+                showAddCardProgress = state.isCardSavingInProgress,
+                dialog = warningDialog,
+                error = state.error
+                    ?.takeIf { !it.silent && warningDialog == null }
+                    ?.let { error ->
+                        error.messageResId?.let { TextReference.Res(it) }
+                            ?: TextReference.Str(error.customMessage)
+                    },
+            )
         }
     }
 
     override fun onCleared() {
         store.unsubscribe(this)
+    }
+
+    private fun createWarningDialogIfNeeded(error: TangemError?, currentDialog: DialogModel?): DialogModel? {
+        return when (error) {
+            is UserWalletsListError.BiometricsAuthenticationLockout -> WarningModel.BiometricsLockoutWarning(
+                isPermanent = error.isPermanent,
+                onDismiss = this::dismissWarningDialog,
+            )
+            is UserWalletsListError.EncryptionKeyInvalidated -> WarningModel.KeyInvalidatedWarning(
+                onDismiss = this::dismissWarningDialog,
+            )
+            is UserWalletsListError.BiometricsAuthenticationDisabled -> WarningModel.BiometricsDisabledWarning(
+                onDismiss = this::clearUserWallets,
+            )
+            else -> currentDialog
+        }
+    }
+
+    private fun clearUserWallets() {
+        store.dispatch(WalletSelectorAction.ClearUserWallets)
+    }
+
+    private fun dismissWarningDialog() {
+        stateInternal.update { prevState ->
+            prevState.copy(
+                dialog = null,
+            )
+        }
+        closeError()
     }
 
     private fun editWallet(userWalletId: UserWalletId) {

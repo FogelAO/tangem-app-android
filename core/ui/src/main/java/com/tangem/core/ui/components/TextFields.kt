@@ -141,19 +141,27 @@ private fun TangemTextField(
             },
             trailingIcon = {
                 val iconRes by rememberUpdatedState(
-                    newValue = if (isError) R.drawable.ic_alert_24 else R.drawable.ic_close_24,
+                    newValue = if (isError) {
+                        R.drawable.ic_alert_24
+                    } else if (value.text.isNotEmpty()) {
+                        R.drawable.ic_close_24
+                    } else {
+                        null
+                    },
                 )
-                IconButton(
-                    modifier = Modifier.size(32.dp),
-                    onClick = onClear,
-                    enabled = !isError && enabled,
-                ) {
-                    Icon(
-                        modifier = Modifier.size(24.dp),
-                        painter = painterResource(id = iconRes),
-                        tint = colors.trailingIconColor(enabled = enabled, isError = isError).value,
-                        contentDescription = "Clear input",
-                    )
+                if (iconRes != null) {
+                    IconButton(
+                        modifier = Modifier.size(32.dp),
+                        onClick = onClear,
+                        enabled = !isError && enabled,
+                    ) {
+                        Icon(
+                            modifier = Modifier.size(24.dp),
+                            painter = painterResource(id = iconRes!!),
+                            tint = colors.trailingIconColor(enabled = enabled, isError = isError).value,
+                            contentDescription = "Clear input",
+                        )
+                    }
                 }
             },
         )
@@ -180,7 +188,7 @@ private fun TangemTextField(
 }
 
 private enum class TangemTextFieldSize {
-    Default
+    Default,
 }
 
 @Composable
@@ -193,7 +201,7 @@ private fun TangemTextFieldSize.toShape(): Shape = when (this) {
     TangemTextFieldSize.Default -> TangemTheme.shapes.roundedCornersSmall2
 }
 
-internal object TangemTextFieldsDefault {
+object TangemTextFieldsDefault {
     val defaultTextFieldColors: TangemTextFieldColors
         @Composable @Stable get() = TangemTextFieldColors(
             textColor = TangemTheme.colors.text.primary1,
@@ -224,7 +232,7 @@ internal object TangemTextFieldsDefault {
 }
 
 @Immutable
-internal data class TangemTextFieldColors(
+data class TangemTextFieldColors(
     private val textColor: Color,
     private val disabledTextColor: Color,
     private val cursorColor: Color,
@@ -305,11 +313,7 @@ internal data class TangemTextFieldColors(
     }
 
     @Composable
-    override fun labelColor(
-        enabled: Boolean,
-        error: Boolean,
-        interactionSource: InteractionSource,
-    ): State<Color> {
+    override fun labelColor(enabled: Boolean, error: Boolean, interactionSource: InteractionSource): State<Color> {
         val focused by interactionSource.collectIsFocusedAsState()
 
         val targetValue = when {
@@ -347,9 +351,7 @@ internal data class TangemTextFieldColors(
 
 // region Preview
 @Composable
-private fun OutlineTextFieldSample(
-    modifier: Modifier = Modifier,
-) {
+private fun OutlineTextFieldSample(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .background(TangemTheme.colors.background.primary)

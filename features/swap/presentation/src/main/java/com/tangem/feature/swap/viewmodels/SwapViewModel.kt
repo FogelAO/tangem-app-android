@@ -1,6 +1,5 @@
 package com.tangem.feature.swap.viewmodels
 
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,22 +7,21 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tangem.core.analytics.api.AnalyticsEventHandler
-import com.tangem.core.ui.utils.getValidatedNumberWithFixedDecimals
+import com.tangem.core.ui.utils.InputNumberFormatter
 import com.tangem.feature.swap.analytics.SwapEvents
 import com.tangem.feature.swap.domain.BlockchainInteractor
 import com.tangem.feature.swap.domain.SwapInteractor
 import com.tangem.feature.swap.domain.models.domain.Currency
-import com.tangem.feature.swap.domain.models.domain.SwapDataModel
+import com.tangem.feature.swap.domain.models.domain.PermissionOptions
 import com.tangem.feature.swap.domain.models.formatToUIRepresentation
-import com.tangem.feature.swap.domain.models.ui.FoundTokensState
-import com.tangem.feature.swap.domain.models.ui.PermissionDataState
-import com.tangem.feature.swap.domain.models.ui.SwapState
-import com.tangem.feature.swap.domain.models.ui.TxState
+import com.tangem.feature.swap.domain.models.ui.*
+import com.tangem.feature.swap.models.SwapPermissionState
 import com.tangem.feature.swap.models.SwapStateHolder
 import com.tangem.feature.swap.models.UiActions
+import com.tangem.feature.swap.models.toDomainApproveType
 import com.tangem.feature.swap.presentation.SwapFragment
+import com.tangem.feature.swap.router.SwapNavScreen
 import com.tangem.feature.swap.router.SwapRouter
-import com.tangem.feature.swap.router.SwapScreen
 import com.tangem.feature.swap.ui.StateBuilder
 import com.tangem.utils.coroutines.CoroutineDispatcherProvider
 import com.tangem.utils.coroutines.Debouncer
@@ -32,6 +30,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import timber.log.Timber
+import java.text.DecimalFormat
+import java.text.NumberFormat
+import java.util.*
 import javax.inject.Inject
 import kotlin.properties.Delegates
 
@@ -49,10 +51,13 @@ internal class SwapViewModel @Inject constructor(
         savedStateHandle[SwapFragment.CURRENCY_BUNDLE_KEY]
             ?: error("no expected parameter Currency found"),
     )
+    private val derivationPath = savedStateHandle.get<String>(SwapFragment.DERIVATION_PATH)
 
     private val stateBuilder = StateBuilder(
         actions = createUiActions(),
     )
+    private val inputNumberFormatter =
+        InputNumberFormatter(NumberFormat.getInstance(Locale.getDefault()) as DecimalFormat)
     private val amountDebouncer = Debouncer()
     private val singleTaskScheduler = SingleTaskScheduler<SwapState>()
 
@@ -69,10 +74,11 @@ internal class SwapViewModel @Inject constructor(
     private var isOrderReversed = false
     private val lastAmount = mutableStateOf(INITIAL_AMOUNT)
     private var swapRouter: SwapRouter by Delegates.notNull()
-    var currentScreen = SwapScreen.Main
+    var currentScreen = SwapNavScreen.Main
         get() = swapRouter.currentScreen
 
     init {
+        swapInteractor.initDerivationPath(derivationPath)
         initTokens(currency)
     }
 
@@ -90,11 +96,11 @@ internal class SwapViewModel @Inject constructor(
         uiState = uiState.copy(
             onBackClicked = router::back,
             onSelectTokenClick = {
-                router.openScreen(SwapScreen.SelectToken)
+                router.openScreen(SwapNavScreen.SelectToken)
                 analyticsEventHandler.send(SwapEvents.ChooseTokenScreenOpened)
             },
             onSuccess = {
-                router.openScreen(SwapScreen.Success)
+                router.openScreen(SwapNavScreen.Success)
             },
         )
     }
@@ -117,7 +123,7 @@ internal class SwapViewModel @Inject constructor(
                     )
                 }
                 .onFailure {
-                    Log.e("SwapViewModel", it.message ?: it.cause.toString())
+                    Timber.e(it)
                 }
         }
     }
@@ -143,11 +149,16 @@ internal class SwapViewModel @Inject constructor(
         )
     }
 
-    private fun loadQuotesTask(
-        fromToken: Currency,
-        toToken: Currency,
-        amount: String,
-    ): PeriodicTask<SwapState> {
+    private fun startLoadingQuotesFromLastState() {
+        val fromCurrency = dataState.fromCurrency
+        val toCurrency = dataState.toCurrency
+        val amount = dataState.amount
+        if (fromCurrency != null && toCurrency != null && amount != null) {
+            startLoadingQuotes(fromCurrency, toCurrency, amount)
+        }
+    }
+
+    private fun loadQuotesTask(fromToken: Currency, toToken: Currency, amount: String): PeriodicTask<SwapState> {
         return PeriodicTask(
             UPDATE_DELAY,
             task = {
@@ -155,9 +166,8 @@ internal class SwapViewModel @Inject constructor(
                 runCatching(dispatchers.io) {
                     dataState = dataState.copy(
                         amount = amount,
-                        swapModel = null,
-                        estimatedGas = null,
-                        approveModel = null,
+                        swapDataModel = null,
+                        approveDataModel = null,
                     )
                     swapInteractor.findBestQuote(
                         networkId = dataState.networkId,
@@ -175,7 +185,11 @@ internal class SwapViewModel @Inject constructor(
                             uiStateHolder = uiState,
                             quoteModel = swapState,
                             fromToken = fromToken,
-                        )
+                        ) { updatedFee ->
+                            dataState = dataState.copy(
+                                selectedFee = updatedFee,
+                            )
+                        }
                     }
                     is SwapState.EmptyAmountState -> {
                         uiState = stateBuilder.createQuotesEmptyAmountState(
@@ -184,25 +198,27 @@ internal class SwapViewModel @Inject constructor(
                         )
                     }
                     is SwapState.SwapError -> {
-                        uiState = stateBuilder.mapError(uiState, swapState.error)
+                        Timber.e("SwapError when loading quotes ${swapState.error}")
+                        uiState = stateBuilder.mapError(uiState, swapState.error) { startLoadingQuotesFromLastState() }
                     }
                 }
             },
             onError = {
-                uiState = stateBuilder.addWarning(uiState, it.message)
+                Timber.e("Error when loading quotes: $it")
+                uiState = stateBuilder.addWarning(uiState, null) { startLoadingQuotesFromLastState() }
             },
         )
     }
 
-    private fun fillDataState(permissionState: PermissionDataState, swapDataModel: SwapDataModel?) {
+    private fun fillDataState(permissionState: PermissionDataState, swapDataModel: SwapStateData?) {
         dataState = if (permissionState is PermissionDataState.PermissionReadyForRequest) {
             dataState.copy(
-                estimatedGas = permissionState.requestApproveData.estimatedGas,
-                approveModel = permissionState.requestApproveData.approveModel,
+                approveDataModel = permissionState.requestApproveData,
             )
         } else {
             dataState.copy(
-                swapModel = swapDataModel,
+                swapDataModel = swapDataModel,
+                selectedFee = swapDataModel?.fee?.normalFee,
             )
         }
     }
@@ -214,10 +230,11 @@ internal class SwapViewModel @Inject constructor(
             runCatching(dispatchers.io) {
                 swapInteractor.onSwap(
                     networkId = dataState.networkId,
-                    swapData = requireNotNull(dataState.swapModel),
+                    swapStateData = requireNotNull(dataState.swapDataModel),
                     currencyToSend = requireNotNull(dataState.fromCurrency),
                     currencyToGet = requireNotNull(dataState.toCurrency),
                     amountToSwap = requireNotNull(dataState.amount),
+                    fee = requireNotNull(dataState.selectedFee),
                 )
             }
                 .onSuccess {
@@ -235,16 +252,23 @@ internal class SwapViewModel @Inject constructor(
                                 }
                             }
                             analyticsEventHandler.send(SwapEvents.SwapInProgressScreen)
-                            swapRouter.openScreen(SwapScreen.Success)
+                            swapRouter.openScreen(SwapNavScreen.Success)
+                        }
+                        is TxState.UserCancelled -> {
+                            startLoadingQuotesFromLastState()
                         }
                         else -> {
-                            uiState = stateBuilder.createSwapErrorTransaction(uiState) {
+                            startLoadingQuotesFromLastState()
+                            uiState = stateBuilder.createErrorTransaction(uiState, it) {
                                 uiState = stateBuilder.clearAlert(uiState)
                             }
                         }
                     }
                 }
-                .onFailure { makeDefaultAlert() }
+                .onFailure {
+                    startLoadingQuotesFromLastState()
+                    makeDefaultAlert()
+                }
         }
     }
 
@@ -253,10 +277,22 @@ internal class SwapViewModel @Inject constructor(
             runCatching(dispatchers.io) {
                 swapInteractor.givePermissionToSwap(
                     networkId = dataState.networkId,
-                    estimatedGas = dataState.estimatedGas!!,
-                    transactionData = dataState.approveModel!!,
-                    forTokenContractAddress = (dataState.fromCurrency as? Currency.NonNativeToken)?.contractAddress
-                        ?: "",
+                    permissionOptions = PermissionOptions(
+                        approveData = requireNotNull(dataState.approveDataModel) {
+                            "dataState.approveDataModel might not be null"
+                        },
+                        forTokenContractAddress = (dataState.fromCurrency as? Currency.NonNativeToken)?.contractAddress
+                            ?: "",
+                        fromToken = requireNotNull(dataState.fromCurrency) {
+                            "dataState.fromCurrency might not be null"
+                        },
+                        approveType = requireNotNull(uiState.permissionState as? SwapPermissionState.ReadyForRequest) {
+                            "uiState.permissionState should be SwapPermissionState.ReadyForRequest"
+                        }.approveType.toDomainApproveType(),
+                        txFee = requireNotNull(dataState.selectedFee) {
+                            "dataState.selectedFee shouldn't be null"
+                        },
+                    ),
                 )
             }
                 .onSuccess {
@@ -264,8 +300,11 @@ internal class SwapViewModel @Inject constructor(
                         is TxState.TxSent -> {
                             uiState = stateBuilder.loadingPermissionState(uiState)
                         }
+                        is TxState.UserCancelled -> Unit
                         else -> {
-                            makeDefaultAlert()
+                            uiState = stateBuilder.createErrorTransaction(uiState, it) {
+                                uiState = stateBuilder.clearAlert(uiState)
+                            }
                         }
                     }
                 }
@@ -304,7 +343,7 @@ internal class SwapViewModel @Inject constructor(
                 toCurrency = toToken,
             )
             startLoadingQuotes(fromToken, toToken, lastAmount.value)
-            swapRouter.openScreen(SwapScreen.Main)
+            swapRouter.openScreen(SwapNavScreen.Main)
         }
     }
 
@@ -317,9 +356,12 @@ internal class SwapViewModel @Inject constructor(
                 toCurrency = newToToken,
             )
             isOrderReversed = !isOrderReversed
-            lastAmount.value =
-                cutAmountWithDecimals(blockchainInteractor.getTokenDecimals(newFromToken), lastAmount.value)
-            uiState = stateBuilder.updateSwapAmount(uiState, lastAmount.value)
+            val decimals = blockchainInteractor.getTokenDecimals(newFromToken)
+            lastAmount.value = cutAmountWithDecimals(decimals, lastAmount.value)
+            uiState = stateBuilder.updateSwapAmount(
+                uiState,
+                inputNumberFormatter.formatWithThousands(lastAmount.value, decimals),
+            )
             startLoadingQuotes(newFromToken, newToToken, lastAmount.value)
         }
     }
@@ -328,10 +370,12 @@ internal class SwapViewModel @Inject constructor(
         val fromToken = dataState.fromCurrency
         val toToken = dataState.toCurrency
         if (fromToken != null && toToken != null) {
-            val cutValue = cutAmountWithDecimals(blockchainInteractor.getTokenDecimals(fromToken), value)
-            uiState = stateBuilder.updateSwapAmount(uiState, cutValue)
+            val decimals = blockchainInteractor.getTokenDecimals(fromToken)
+            val cutValue = cutAmountWithDecimals(decimals, value)
             lastAmount.value = cutValue
-            amountDebouncer.debounce(DEBOUNCE_AMOUNT_DELAY, viewModelScope) {
+            uiState =
+                stateBuilder.updateSwapAmount(uiState, inputNumberFormatter.formatWithThousands(cutValue, decimals))
+            amountDebouncer.debounce(viewModelScope, DEBOUNCE_AMOUNT_DELAY) {
                 startLoadingQuotes(fromToken, toToken, lastAmount.value)
             }
         }
@@ -339,7 +383,7 @@ internal class SwapViewModel @Inject constructor(
 
     private fun onMaxAmountClicked() {
         dataState.fromCurrency?.let {
-            val balance = swapInteractor.getTokenBalance(it)
+            val balance = swapInteractor.getTokenBalance(currency.networkId, it)
             onAmountChanged(balance.formatToUIRepresentation())
         }
     }
@@ -352,7 +396,7 @@ internal class SwapViewModel @Inject constructor(
     }
 
     private fun cutAmountWithDecimals(maxDecimals: Int, amount: String): String {
-        return getValidatedNumberWithFixedDecimals(amount, maxDecimals)
+        return inputNumberFormatter.getValidatedNumberWithFixedDecimals(amount, maxDecimals)
     }
 
     private fun makeDefaultAlert() {
@@ -364,10 +408,7 @@ internal class SwapViewModel @Inject constructor(
     private fun createUiActions(): UiActions {
         return UiActions(
             onSearchEntered = { onSearchEntered(it) },
-            onTokenSelected = {
-                onTokenSelect(it)
-                analyticsEventHandler.send(SwapEvents.SearchTokenClicked)
-            },
+            onTokenSelected = { onTokenSelect(it) },
             onAmountChanged = { onAmountChanged(it) },
             onSwapClick = {
                 onSwapClick()
@@ -399,6 +440,18 @@ internal class SwapViewModel @Inject constructor(
                 analyticsEventHandler.send(SwapEvents.ButtonPermissionCancelClicked)
             },
             onAmountSelected = { onAmountSelected(it) },
+            onSearchFocusChange = { focused ->
+                if (focused) {
+                    analyticsEventHandler.send(SwapEvents.SearchTokenClicked)
+                }
+            },
+            onChangeApproveType = { approveType ->
+                uiState = stateBuilder.updateApproveType(uiState, approveType)
+            },
+            onSelectItemFee = { feeItem ->
+                dataState = dataState.copy(selectedFee = feeItem.data)
+                uiState = stateBuilder.updateFeeSelectedItem(uiState, feeItem)
+            },
         )
     }
 

@@ -2,11 +2,11 @@ package com.tangem.tap.common.redux.global
 
 import com.tangem.domain.redux.domainStore
 import com.tangem.domain.redux.global.DomainGlobalAction
-import com.tangem.tap.common.extensions.replaceBy
 import com.tangem.tap.common.redux.AppState
 import com.tangem.tap.features.onboarding.OnboardingManager
 import com.tangem.tap.preferencesStorage
 import com.tangem.tap.proxy.AppStateHolder
+import com.tangem.utils.extensions.replaceBy
 import org.rekotlin.Action
 
 @Suppress("LongMethod", "ComplexMethod")
@@ -49,6 +49,7 @@ fun globalReducer(action: Action, state: AppState, appStateHolder: AppStateHolde
             globalState.copy(configManager = action.configManager)
         }
         is GlobalAction.SetWarningManager -> globalState.copy(warningManager = action.warningManager)
+        is GlobalAction.SetTopUpController -> globalState.copy(topUpController = action.topUpController)
         is GlobalAction.UpdateWalletSignedHashes -> {
             val card = globalState.scanResponse?.card ?: return globalState
             val wallet = card.wallets
@@ -84,6 +85,12 @@ fun globalReducer(action: Action, state: AppState, appStateHolder: AppStateHolde
         is GlobalAction.FetchUserCountry.Success -> globalState.copy(
             userCountryCode = action.countryCode,
         )
+        is GlobalAction.UpdateUserWalletsListManager -> {
+            appStateHolder.userWalletsListManager = action.manager
+            globalState.copy(
+                userWalletsListManager = action.manager,
+            )
+        }
         else -> globalState
     }
 }
